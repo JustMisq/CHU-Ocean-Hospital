@@ -59,7 +59,7 @@ Avoir un grade = accès à l'espace pro. Pas de grade = patient.
 
 1. Projet Vercel → **Storage** → **Create Database** → **Neon** → connecter au projet (ajoute `DATABASE_URL`).
 2. Copier cette `DATABASE_URL` dans `packages/db/.env` et `apps/web/.env.local`, puis `npm run db:push` (et `npm run db:seed` si besoin).
-3. Vercel : variables de `.env.example` (sans `AUTH_DEV_LOGIN`), et ajouter
+3. Vercel : variables de `.env.example` (`AUTH_DEV_LOGIN` seulement le temps de configurer Discord, puis la supprimer), et ajouter
    `https://<ton-domaine>/api/auth/callback/discord` dans les redirects OAuth2 Discord.
 
 ## Bot Discord (plus tard)

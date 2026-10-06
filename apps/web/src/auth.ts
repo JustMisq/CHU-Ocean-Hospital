@@ -3,7 +3,8 @@ import Credentials from "next-auth/providers/credentials";
 import Discord from "next-auth/providers/discord";
 import { loadSettings, prisma, syncDiscordMember } from "@ocean/db";
 
-const devLogin = process.env.NODE_ENV !== "production" && process.env.AUTH_DEV_LOGIN === "true";
+// Activable en prod le temps de configurer Discord : n'importe qui peut alors se connecter en démo.
+const devLogin = process.env.AUTH_DEV_LOGIN === "true";
 
 type GuildMember = { nick: string | null; roles: string[] };
 
