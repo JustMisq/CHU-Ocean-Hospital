@@ -12,14 +12,14 @@ apps/bot      (à venir) Bot Discord
 ## Démarrer en local
 
 ```bash
-npm install
-npm run db:generate
-npm run db:push        # crée packages/db/dev.db
+npm install            # génère aussi le client Prisma
+npm run db:push        # crée / met à jour les tables dans la base Postgres
 npm run db:seed        # grades / services / spécialités d'exemple + comptes de démo
 npm run dev            # http://localhost:3000
 ```
 
 Variables : `packages/db/.env` (Prisma CLI) et `apps/web/.env.local` (voir `apps/web/.env.example`).
+`DATABASE_URL` est la même URL Postgres dans les deux fichiers (celle de la base Neon créée sur Vercel).
 Avec `AUTH_DEV_LOGIN="true"`, `/connexion` propose des comptes de démo sans Discord.
 
 ## Première configuration
@@ -57,9 +57,10 @@ Avoir un grade = accès à l'espace pro. Pas de grade = patient.
 
 ## Production (Vercel)
 
-1. Créer une base Postgres (Neon / Supabase).
-2. `packages/db/prisma/schema.prisma` : `provider = "postgresql"` ; dans `packages/db/src/index.ts`, remplacer l'adapter SQLite par `@prisma/adapter-pg`.
-3. Vercel : Root Directory = `apps/web`, variables de `.env.example` (sans `AUTH_DEV_LOGIN`).
+1. Projet Vercel → **Storage** → **Create Database** → **Neon** → connecter au projet (ajoute `DATABASE_URL`).
+2. Copier cette `DATABASE_URL` dans `packages/db/.env` et `apps/web/.env.local`, puis `npm run db:push` (et `npm run db:seed` si besoin).
+3. Vercel : variables de `.env.example` (sans `AUTH_DEV_LOGIN`), et ajouter
+   `https://<ton-domaine>/api/auth/callback/discord` dans les redirects OAuth2 Discord.
 
 ## Bot Discord (plus tard)
 

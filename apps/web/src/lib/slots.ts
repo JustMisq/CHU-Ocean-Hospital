@@ -53,8 +53,8 @@ export async function getFreeSlots(staffId: string) {
 
 /**
  * Vérifie qu'un créneau précis est bien proposé et libre.
- * Dans une transaction, passer `db` = tx ET `rules` (chargées avant) : sous SQLite,
- * une requête hors transaction pendant celle-ci bloquerait.
+ * Dans une transaction, passer `db` = tx ET `rules` (chargées avant) : une requête
+ * hors transaction pendant celle-ci ne verrait pas ses écritures.
  */
 export async function findFreeSlot(
   staffId: string,

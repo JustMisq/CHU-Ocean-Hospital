@@ -1,5 +1,5 @@
 // Schéma Ocean Hospital — partagé entre le site (apps/web) et le bot (apps/bot).
-// En local : SQLite. En production : passer `provider` à "postgresql".
+// Base Postgres (la même URL en local et sur Vercel, voir README).
 //
 // Tout ce qui structure l'hôpital (services, grades, spécialités, réglages) est
 // configurable depuis le site. Un élément qui a des `discordRoleIds` est synchronisé
@@ -11,7 +11,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
 }
 
 enum AppointmentStatus {
