@@ -1,0 +1,16 @@
+{
+  "name": "oceanhospital",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w web",
+    "build": "npm run build -w web",
+    "db:generate": "npm run generate -w @ocean/db",
+    "db:push": "npm run push -w @ocean/db",
+    "db:seed": "npm run seed -w @ocean/db",
+    "db:studio": "npm run studio -w @ocean/db"
+  }
+}

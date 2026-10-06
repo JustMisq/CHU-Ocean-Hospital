@@ -1,0 +1,49 @@
+@import "tailwindcss";
+
+@theme inline {
+  --font-sans: var(--font-jakarta);
+
+  --color-ocean-50: #eef8fc;
+  --color-ocean-100: #d5eef8;
+  --color-ocean-200: #ade0f2;
+  --color-ocean-300: #74c9e7;
+  --color-ocean-400: #35a9d3;
+  --color-ocean-500: #138cb8;
+  --color-ocean-600: #0a6f98;
+  --color-ocean-700: #0b5a7c;
+  --color-ocean-800: #0f4a66;
+  --color-ocean-900: #113e56;
+  --color-ocean-950: #0a2738;
+
+  --color-ink: #0f2233;
+  --color-muted: #5b6b7a;
+  --color-line: #e3e9ef;
+  --color-canvas: #f4f7fa;
+}
+
+body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+}
+
+@utility btn {
+  @apply inline-flex cursor-pointer items-center justify-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50;
+}
+@utility btn-primary {
+  @apply btn bg-ocean-600 text-white hover:bg-ocean-700;
+}
+@utility btn-secondary {
+  @apply btn border border-line bg-white text-ink hover:bg-ocean-50;
+}
+@utility btn-danger {
+  @apply btn border border-red-200 bg-white text-red-700 hover:bg-red-50;
+}
+@utility card {
+  @apply rounded-2xl border border-line bg-white;
+}
+@utility input {
+  @apply w-full rounded-xl border border-line bg-white px-3.5 py-2.5 text-sm outline-none transition placeholder:text-muted/70 focus:border-ocean-400 focus:ring-4 focus:ring-ocean-100;
+}
+@utility label {
+  @apply mb-1.5 block text-sm font-medium text-ink;
+}

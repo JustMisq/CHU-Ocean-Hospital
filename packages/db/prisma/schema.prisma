@@ -1,0 +1,171 @@
+// Schéma Ocean Hospital — partagé entre le site (apps/web) et le bot (apps/bot).
+// En local : SQLite. En production : passer `provider` à "postgresql".
+//
+// Tout ce qui structure l'hôpital (services, grades, spécialités, réglages) est
+// configurable depuis le site. Un élément qui a des `discordRoleIds` est synchronisé
+// automatiquement depuis Discord ; sans ID, il est attribué à la main.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+enum AppointmentStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+  NO_SHOW
+}
+
+/// Réglages clé/valeur modifiables depuis /pro/config.
+model Setting {
+  key   String @id
+  value String
+}
+
+model User {
+  id        String   @id @default(cuid())
+  discordId String   @unique
+  username  String
+  avatarUrl String?
+  /// Dernière liste de rôles Discord connue (IDs séparés par des virgules).
+  discordRoles String  @default("")
+  lastSyncAt   DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  characters Character[]
+  staff      StaffProfile?
+}
+
+/// Personnage RP. Un compte Discord peut en avoir plusieurs.
+model Character {
+  id        String   @id @default(cuid())
+  userId    String
+  firstName String
+  lastName  String
+  birthDate DateTime
+  phone     String?
+  bloodType String?
+  allergies String?
+  createdAt DateTime @default(now())
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  appointments Appointment[]
+
+  @@index([userId])
+}
+
+/// Service / département de l'hôpital (affiché publiquement).
+model Service {
+  id             String  @id @default(cuid())
+  slug           String  @unique
+  name           String
+  description    String  @default("")
+  icon           String  @default("stethoscope")
+  order          Int     @default(0)
+  isPublic       Boolean @default(true)
+  discordRoleIds String  @default("")
+
+  staff        StaffProfile[]
+  appointments Appointment[]
+}
+
+/// Compétence complémentaire (ex : chirurgien, psychiatre, formateur…).
+model Specialty {
+  id             String  @id @default(cuid())
+  slug           String  @unique
+  name           String
+  description    String  @default("")
+  order          Int     @default(0)
+  discordRoleIds String  @default("")
+
+  staff StaffProfile[]
+}
+
+/// Grade hiérarchique. `order` élevé = grade supérieur. Porte les permissions.
+model Grade {
+  id             String  @id @default(cuid())
+  name           String
+  order          Int     @default(0)
+  color          String  @default("#0a6f98")
+  /// Peut publier des disponibilités et apparaître dans l'annuaire.
+  bookable       Boolean @default(true)
+  /// Permissions (clés séparées par des virgules, voir permissions.ts).
+  permissions    String  @default("")
+  discordRoleIds String  @default("")
+
+  staff StaffProfile[]
+}
+
+/// Fiche d'un membre du personnel.
+model StaffProfile {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  displayName String
+  bio         String?
+  gradeId     String?
+  isPublic    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  grade          Grade?         @relation(fields: [gradeId], references: [id], onDelete: SetNull)
+  services       Service[]
+  specialties    Specialty[]
+  availabilities Availability[]
+  appointments   Appointment[]
+}
+
+/// Plage de disponibilité publiée par un soignant, découpée en créneaux de `slotMinutes`.
+model Availability {
+  id          String   @id @default(cuid())
+  staffId     String
+  start       DateTime
+  end         DateTime
+  slotMinutes Int      @default(30)
+  createdAt   DateTime @default(now())
+
+  staff StaffProfile @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@index([staffId, start])
+}
+
+model Appointment {
+  id           String            @id @default(cuid())
+  characterId  String
+  staffId      String
+  serviceId    String?
+  start        DateTime
+  end          DateTime
+  reason       String
+  status       AppointmentStatus @default(CONFIRMED)
+  /// Compte rendu rédigé par le soignant (visible du patient).
+  report       String?
+  cancelReason String?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  character Character    @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  staff     StaffProfile @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  service   Service?     @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+
+  @@index([staffId, start])
+  @@index([characterId])
+}
+
+/// File d'événements consommée par le bot Discord (notifications, logs).
+/// Le site écrit, le bot lit et marque `processedAt`.
+model BotEvent {
+  id          String    @id @default(cuid())
+  type        String
+  payload     String
+  createdAt   DateTime  @default(now())
+  processedAt DateTime?
+
+  @@index([processedAt])
+}
