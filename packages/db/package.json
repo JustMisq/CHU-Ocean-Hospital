@@ -13,6 +13,7 @@
     "postinstall": "prisma generate",
     "push": "prisma db push",
     "seed": "tsx prisma/seed.ts",
+    "admin": "tsx prisma/create-admin.ts",
     "studio": "prisma studio"
   },
   "dependencies": {

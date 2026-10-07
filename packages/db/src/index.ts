@@ -5,6 +5,7 @@ export * from "../generated/prisma/client";
 export * from "./permissions";
 export * from "./settings";
 export * from "./discord-sync";
+export * from "./password";
 
 function createClient() {
   const url = process.env.DATABASE_URL;
@@ -28,4 +29,9 @@ export type BotEventType =
 /** Ajoute un événement à la file lue par le bot Discord. */
 export function queueBotEvent(type: BotEventType, payload: Record<string, unknown>) {
   return prisma.botEvent.create({ data: { type, payload: JSON.stringify(payload) } });
+}
+
+/** Trace une action du personnel dans le journal (/pro/journal). */
+export function logAction(actorId: string, action: string, summary: string) {
+  return prisma.auditLog.create({ data: { actorId, action, summary } });
 }

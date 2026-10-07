@@ -1,8 +1,9 @@
 import Link from "next/link";
+import { discordEnabled } from "@/lib/features";
 import { requireStaff } from "@/lib/session";
 
 const TABS = [
-  { href: "/pro/config", label: "Général & Discord" },
+  { href: "/pro/config", label: discordEnabled ? "Général & Discord" : "Général" },
   { href: "/pro/config/services", label: "Services" },
   { href: "/pro/config/grades", label: "Grades" },
   { href: "/pro/config/specialites", label: "Spécialités" },

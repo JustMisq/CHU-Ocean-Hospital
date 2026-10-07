@@ -1,6 +1,8 @@
 /* eslint-disable @next/next/no-img-element */
-export function Avatar({ name, src, size = "sm" }: { name: string; src?: string | null; size?: "sm" | "lg" }) {
-  const cls = size === "lg" ? "size-20 text-2xl" : "size-8 text-xs";
+const SIZES = { sm: "size-8 text-xs", md: "size-12 text-sm", lg: "size-20 text-2xl" };
+
+export function Avatar({ name, src, size = "sm", className = "" }: { name: string; src?: string | null; size?: keyof typeof SIZES; className?: string }) {
+  const cls = `${SIZES[size]} ${className}`;
   const initials = name
     .replace(/^Dr\.?\s*/i, "")
     .split(/\s+/)

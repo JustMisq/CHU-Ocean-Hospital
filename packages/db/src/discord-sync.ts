@@ -29,12 +29,24 @@ function mergeLinked<T extends Linkable>(all: T[], current: T[], roles: string[]
  * Le grade le plus élevé parmi les grades liés gagne. Sans grade, le membre est simple patient.
  */
 export async function syncDiscordMember(db: PrismaClient, input: DiscordMemberInput) {
-  const roles = input.roles ?? [];
+  const identity = { username: input.username, avatarUrl: input.avatarUrl };
 
+  // Rôles inconnus (API Discord en erreur, serveur non configuré…) : on ne touche ni aux
+  // grades ni aux services, sinon une simple panne Discord retirerait son accès au personnel.
+  if (input.roles === null) {
+    return db.user.upsert({
+      where: { discordId: input.discordId },
+      update: identity,
+      create: { discordId: input.discordId, ...identity },
+    });
+  }
+
+  const roles = input.roles;
+  const synced = { ...identity, discordRoles: roles.join(","), lastSyncAt: new Date() };
   const user = await db.user.upsert({
     where: { discordId: input.discordId },
-    update: { username: input.username, avatarUrl: input.avatarUrl, discordRoles: roles.join(","), lastSyncAt: new Date() },
-    create: { discordId: input.discordId, username: input.username, avatarUrl: input.avatarUrl, discordRoles: roles.join(","), lastSyncAt: new Date() },
+    update: synced,
+    create: { discordId: input.discordId, ...synced },
   });
 
   const [grades, services, specialties, staff] = await Promise.all([

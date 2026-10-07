@@ -1,12 +1,12 @@
 # Ocean Hospital
 
-Site de prise de rendez-vous (style Doctolib) pour l'hôpital d'un serveur GTA RP, relié à Discord.
+Site de prise de rendez-vous (style Doctolib) pour l'hôpital d'un serveur GTA RP.
 Ce n'est pas un MDT : la prise de service et le terrain restent en jeu. Le site gère les RDV, le suivi patient et l'organisation de l'hôpital.
+Il fonctionne seul (comptes identifiant + mot de passe) ; Discord est une option qui se branche plus tard.
 
 ```
 apps/web      Site Next.js 16 (public, espace patient, espace pro, configuration)
-packages/db   Schéma Prisma 7 + client + logique partagée (permissions, réglages, synchro Discord)
-apps/bot      (à venir) Bot Discord
+packages/db   Schéma Prisma 7 + client + logique partagée (permissions, réglages, mots de passe, synchro Discord)
 ```
 
 ## Démarrer en local
@@ -20,29 +20,53 @@ npm run dev            # http://localhost:3000
 
 Variables : `packages/db/.env` (Prisma CLI) et `apps/web/.env.local` (voir `apps/web/.env.example`).
 `DATABASE_URL` est la même URL Postgres dans les deux fichiers (celle de la base Neon créée sur Vercel).
-Avec `AUTH_DEV_LOGIN="true"`, `/connexion` propose des comptes de démo sans Discord.
+Avec `AUTH_DEV_LOGIN="true"`, `/connexion` propose des comptes de démo sans mot de passe.
 
 ## Première configuration
 
+1. Créer ton compte super-admin (accès total, même sans grade) :
+   ```bash
+   npm run admin -- <identifiant> <motdepasse>
+   ```
+2. Se connecter sur `/connexion`, aller dans **Espace pro → Configuration** :
+   - **Général** : nom de l'hôpital, inscription libre ou non, règles de réservation et d'annulation ;
+   - **Grades** : hiérarchie (ordre), couleur, permissions, réservable ou non ;
+   - **Services** : affichés sur le site public ;
+   - **Spécialités** : compétences en plus.
+3. **Personnel** : créer les comptes des soignants (voir ci-dessous).
+
+## Comptes
+
+| Qui | Comment |
+|---|---|
+| Citoyen / patient | S'inscrit lui-même sur `/inscription` (désactivable dans Configuration → Général), puis crée son personnage. |
+| EMS / médecin | La direction crée son compte dans **Personnel → Créer un compte soignant** : un mot de passe temporaire s'affiche une fois, à transmettre en jeu. Il le change à sa première connexion. |
+| Citoyen qui rejoint l'hôpital | **Personnel → Promouvoir un compte existant** : il garde son compte et ses personnages. |
+| Mot de passe oublié | **Personnel → Réinitialiser un mot de passe** (patients, ou soignants de grade inférieur). |
+
+Mots de passe hachés avec scrypt. Compte bloqué 15 min après 5 échecs de connexion.
+
+## Discord (optionnel)
+
+Désactivé tant que `AUTH_DISCORD_ID` / `AUTH_DISCORD_SECRET` sont vides : le bouton Discord, les champs « IDs de rôles » et la synchro sont alors masqués
+(les IDs déjà saisis sont conservés). Pour l'activer :
+
 1. Discord Developer Portal → New Application → **OAuth2** : redirect `http://localhost:3000/api/auth/callback/discord`,
-   puis Client ID / Secret dans `AUTH_DISCORD_ID` / `AUTH_DISCORD_SECRET`.
-2. Mettre **ton ID Discord** dans `ADMIN_DISCORD_IDS` → accès total au site, même sans grade.
-3. Se connecter, aller dans **Espace pro → Configuration** :
-   - **Général & Discord** : nom de l'hôpital, ID du serveur Discord, règles de réservation ;
-   - **Grades** : hiérarchie (ordre), couleur, permissions, réservable ou non, IDs de rôles Discord ;
-   - **Services** : affichés sur le site public, IDs de rôles Discord ;
-   - **Spécialités** : compétences en plus, IDs de rôles Discord.
+   puis Client ID / Secret dans `AUTH_DISCORD_ID` / `AUTH_DISCORD_SECRET`, et redémarrer le site.
+2. Optionnel : ton ID Discord dans `ADMIN_DISCORD_IDS` pour être super-admin via Discord.
+3. Renseigner l'ID du serveur et les IDs de rôles dans la configuration.
 
-## Synchronisation Discord
-
-À chaque connexion (et plus tard via le bot), `syncDiscordMember` (`packages/db/src/discord-sync.ts`) :
+À chaque connexion Discord (et plus tard via un bot), `syncDiscordMember` (`packages/db/src/discord-sync.ts`) :
 
 - donne au membre le **grade le plus haut** parmi ceux liés à ses rôles Discord ;
 - lui donne **tous** les services et spécialités liés à ses rôles ;
 - retire ce qui est lié à un rôle qu'il n'a plus ;
-- **ne touche pas** aux éléments sans ID Discord, qui s'attribuent à la main dans **Personnel**.
+- **ne touche pas** aux éléments sans ID Discord, qui s'attribuent à la main dans **Personnel** ;
+- **ne touche à rien** si Discord ne répond pas (panne, rate-limit) : seuls le pseudo et l'avatar sont mis à jour.
 
 Avoir un grade = accès à l'espace pro. Pas de grade = patient.
+
+Photo et bannière d'un soignant : envoyées depuis **Mon profil** (glisser-déposer), stockées dans la base. Sans photo : avatar Discord s'il existe, sinon initiales.
 
 ## Permissions (cochées par grade)
 
@@ -53,16 +77,33 @@ Avoir un grade = accès à l'espace pro. Pas de grade = patient.
 | `appointments.manage_all` | Clôturer / annuler les RDV des autres soignants |
 | `staff.manage` | Page Personnel (uniquement les grades **inférieurs** au sien) |
 | `stats.view` | Page Statistiques |
+| `audit.view` | Page Journal (changements de grade, annulations, configuration) |
 | `settings.manage` | Page Configuration |
+
+## Données conservées
+
+- Un personnage supprimé par un joueur qui a déjà eu des RDV est **archivé**, pas effacé : son dossier reste visible des soignants.
+- Les RDV ne sont jamais supprimés par effet de bord (`onDelete: Restrict`).
+- Le journal trace les actions sur le personnel, la configuration et les RDV gérés pour un autre soignant.
+
+## Vérifications
+
+```bash
+npm run lint
+npm run typecheck
+```
+
+Lancées automatiquement par GitHub Actions (`.github/workflows/ci.yml`) à chaque push sur `main` et sur les PR.
 
 ## Production (Vercel)
 
 1. Projet Vercel → **Storage** → **Create Database** → **Neon** → connecter au projet (ajoute `DATABASE_URL`).
 2. Copier cette `DATABASE_URL` dans `packages/db/.env` et `apps/web/.env.local`, puis `npm run db:push` (et `npm run db:seed` si besoin).
-3. Vercel : variables de `.env.example` (`AUTH_DEV_LOGIN` seulement le temps de configurer Discord, puis la supprimer), et ajouter
-   `https://<ton-domaine>/api/auth/callback/discord` dans les redirects OAuth2 Discord.
+3. Vercel : variables de `.env.example`. **Ne pas mettre `AUTH_DEV_LOGIN`** en production (n'importe qui pourrait se connecter en démo).
+4. `npm run admin -- <identifiant> <motdepasse>` (avec la `DATABASE_URL` de production) pour le premier compte.
+5. Si Discord est activé : ajouter `https://<ton-domaine>/api/auth/callback/discord` dans les redirects OAuth2.
 
-## Bot Discord (plus tard)
+## Bot Discord (si un jour il est accepté)
 
 - Synchro en direct des nouveaux membres et des changements de rôles : appeler `syncDiscordMember` sur `guildMemberAdd` / `guildMemberUpdate`.
 - Notifications : lire la table `BotEvent` (`appointment.created|cancelled|completed`), puis marquer `processedAt`.

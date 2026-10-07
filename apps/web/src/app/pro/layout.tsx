@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ChartColumn, CalendarDays, Clock, Settings2, UserRound, Users } from "lucide-react";
+import { ChartColumn, CalendarDays, Clock, ScrollText, Settings2, UserRound, Users } from "lucide-react";
 import { GradeBadge } from "@/components/grade-badge";
 import { requireStaff } from "@/lib/session";
 
@@ -11,6 +11,7 @@ export default async function ProLayout({ children }: LayoutProps<"/pro">) {
     { href: "/pro/profil", label: "Mon profil", icon: UserRound, show: true },
     { href: "/pro/personnel", label: "Personnel", icon: Users, show: user.can("staff.manage") },
     { href: "/pro/stats", label: "Statistiques", icon: ChartColumn, show: user.can("stats.view") },
+    { href: "/pro/journal", label: "Journal", icon: ScrollText, show: user.can("audit.view") },
     { href: "/pro/config", label: "Configuration", icon: Settings2, show: user.can("settings.manage") },
   ].filter((l) => l.show);
 

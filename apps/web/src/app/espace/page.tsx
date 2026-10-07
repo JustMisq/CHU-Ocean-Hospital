@@ -5,7 +5,9 @@ import { prisma } from "@ocean/db";
 import { ConfirmButton } from "@/components/forms";
 import { StatusBadge } from "@/components/status-badge";
 import { cancelAppointmentAsPatient } from "@/lib/actions/patient";
+import { discordEnabled } from "@/lib/features";
 import { requireUser } from "@/lib/session";
+import { bookingRules, canPatientCancel } from "@/lib/slots";
 import { formatDateTime } from "@/lib/time";
 
 export const metadata: Metadata = { title: "Mes rendez-vous" };
@@ -15,12 +17,15 @@ export default async function PatientAppointmentsPage({ searchParams }: PageProp
   const { rdv } = await searchParams;
   const now = new Date();
 
-  const appointments = await prisma.appointment.findMany({
-    where: { character: { userId: user.id } },
-    include: { character: true, staff: true, service: true },
-    orderBy: { start: "desc" },
-    take: 50,
-  });
+  const [appointments, rules] = await Promise.all([
+    prisma.appointment.findMany({
+      where: { character: { userId: user.id } },
+      include: { character: true, staff: true, service: true },
+      orderBy: { start: "desc" },
+      take: 50,
+    }),
+    bookingRules(),
+  ]);
   const upcoming = appointments.filter((a) => a.start > now && ["PENDING", "CONFIRMED"].includes(a.status)).reverse();
   const past = appointments.filter((a) => !upcoming.includes(a));
 
@@ -28,7 +33,7 @@ export default async function PatientAppointmentsPage({ searchParams }: PageProp
     <div className="space-y-8">
       {rdv && upcoming.some((a) => a.id === rdv) && (
         <p className="flex items-center gap-2 rounded-xl bg-emerald-50 p-4 text-sm font-medium text-emerald-800">
-          <CircleCheck className="size-5" /> Rendez-vous confirmé ! Vous recevrez un rappel sur Discord.
+          <CircleCheck className="size-5" /> Rendez-vous confirmé !{discordEnabled && " Vous recevrez un rappel sur Discord."}
         </p>
       )}
 
@@ -47,10 +52,16 @@ export default async function PatientAppointmentsPage({ searchParams }: PageProp
                 </p>
                 <p className="mt-1 text-sm">{a.reason}</p>
               </div>
-              <form action={cancelAppointmentAsPatient}>
-                <input type="hidden" name="id" value={a.id} />
-                <ConfirmButton message="Annuler ce rendez-vous ?">Annuler</ConfirmButton>
-              </form>
+              {canPatientCancel(a.start, rules) ? (
+                <form action={cancelAppointmentAsPatient}>
+                  <input type="hidden" name="id" value={a.id} />
+                  <ConfirmButton message="Annuler ce rendez-vous ?">Annuler</ConfirmButton>
+                </form>
+              ) : (
+                <p className="text-xs text-muted sm:max-w-44 sm:text-right">
+                  Annulation en ligne impossible à moins de {rules.cancelNoticeHours} h du RDV : prévenez l&apos;hôpital en jeu.
+                </p>
+              )}
             </li>
           ))}
           {upcoming.length === 0 && <li className="card p-8 text-center text-sm text-muted">Aucun rendez-vous à venir.</li>}

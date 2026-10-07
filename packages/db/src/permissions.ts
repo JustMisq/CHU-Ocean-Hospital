@@ -8,6 +8,7 @@ export const PERMISSIONS = {
   "appointments.manage_all": "Gérer les rendez-vous de tous les soignants",
   "staff.manage": "Gérer le personnel (grades, services, spécialités)",
   "stats.view": "Voir les statistiques",
+  "audit.view": "Consulter le journal (personnel, configuration, annulations)",
   "settings.manage": "Configurer le site (services, grades, spécialités, Discord)",
 } as const;
 

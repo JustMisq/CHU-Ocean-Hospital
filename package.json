@@ -8,9 +8,12 @@
   "scripts": {
     "dev": "npm run dev -w web",
     "build": "npm run build -w web",
+    "lint": "npm run lint -w web",
+    "typecheck": "npm run typecheck -w web",
     "db:generate": "npm run generate -w @ocean/db",
     "db:push": "npm run push -w @ocean/db",
     "db:seed": "npm run seed -w @ocean/db",
+    "admin": "npm run admin -w @ocean/db --",
     "db:studio": "npm run studio -w @ocean/db"
   }
 }

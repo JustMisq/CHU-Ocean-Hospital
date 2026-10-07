@@ -1,26 +1,62 @@
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import Discord from "next-auth/providers/discord";
-import { loadSettings, prisma, syncDiscordMember } from "@ocean/db";
+import { loadSettings, normalizeLogin, prisma, syncDiscordMember, verifyPassword } from "@ocean/db";
+import { devLoginEnabled, discordEnabled } from "@/lib/features";
 
-// Activable en prod le temps de configurer Discord : n'importe qui peut alors se connecter en démo.
-const devLogin = process.env.AUTH_DEV_LOGIN === "true";
+const MAX_FAILED_LOGINS = 5;
+const LOCK_MINUTES = 15;
 
 type GuildMember = { nick: string | null; roles: string[] };
 
-async function fetchGuildMember(guildId: string, accessToken: string): Promise<GuildMember | null> {
-  const res = await fetch(`https://discord.com/api/v10/users/@me/guilds/${guildId}/member`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-  return res.ok ? ((await res.json()) as GuildMember) : null;
+/** Le membre, `null` s'il n'est pas sur le serveur, `undefined` si Discord n'a pas répondu correctement. */
+async function fetchGuildMember(guildId: string, accessToken: string): Promise<GuildMember | null | undefined> {
+  try {
+    const res = await fetch(`https://discord.com/api/v10/users/@me/guilds/${guildId}/member`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (res.status === 404) return null;
+    return res.ok ? ((await res.json()) as GuildMember) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Identifiant + mot de passe, avec blocage temporaire après plusieurs échecs. */
+async function authorizePassword(credentials: Partial<Record<string, unknown>>) {
+  const login = normalizeLogin(String(credentials.login ?? ""));
+  const password = String(credentials.password ?? "");
+  const user = login ? await prisma.user.findUnique({ where: { login } }) : null;
+  if (!user?.passwordHash || !password) return null;
+  if (user.lockedUntil && user.lockedUntil > new Date()) return null;
+
+  if (!(await verifyPassword(password, user.passwordHash))) {
+    const failed = user.failedLogins + 1;
+    const locked = failed >= MAX_FAILED_LOGINS;
+    await prisma.user.update({
+      where: { id: user.id },
+      data: locked ? { failedLogins: 0, lockedUntil: new Date(Date.now() + LOCK_MINUTES * 60_000) } : { failedLogins: failed },
+    });
+    return null;
+  }
+  if (user.failedLogins || user.lockedUntil) {
+    await prisma.user.update({ where: { id: user.id }, data: { failedLogins: 0, lockedUntil: null } });
+  }
+  return { id: user.id, name: user.username };
 }
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   session: { strategy: "jwt" },
   pages: { signIn: "/connexion", error: "/connexion" },
   providers: [
-    Discord({ authorization: { params: { scope: "identify guilds.members.read" } } }),
-    ...(devLogin
+    Credentials({
+      id: "password",
+      name: "Identifiant",
+      credentials: { login: {}, password: {} },
+      authorize: authorizePassword,
+    }),
+    ...(discordEnabled ? [Discord({ authorization: { params: { scope: "identify guilds.members.read" } } })] : []),
+    ...(devLoginEnabled
       ? [
           Credentials({
             id: "dev",
@@ -40,15 +76,17 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
       const settings = await loadSettings(prisma);
       const guildId = settings.discordGuildId || process.env.DISCORD_GUILD_ID || "";
-      const member = guildId ? await fetchGuildMember(guildId, account.access_token) : null;
-      if (!member && guildId && settings.requireGuildMember === "true") return "/connexion?erreur=serveur";
+      const member = guildId ? await fetchGuildMember(guildId, account.access_token) : undefined;
+      if (member === null && settings.requireGuildMember === "true") return "/connexion?erreur=serveur";
+      if (member === undefined && guildId && settings.requireGuildMember === "true") return "/connexion?erreur=discord";
 
       const discordId = String(profile.id);
       await syncDiscordMember(prisma, {
         discordId,
         username: member?.nick || (profile.global_name as string | null) || String(profile.username),
         avatarUrl: profile.avatar ? `https://cdn.discordapp.com/avatars/${discordId}/${profile.avatar}.png` : null,
-        roles: member?.roles ?? null,
+        // Absent du serveur → aucun rôle ; réponse Discord inconnue → on ne touche pas aux rôles.
+        roles: member === undefined ? null : (member?.roles ?? []),
       });
       return true;
     },
@@ -56,7 +94,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (account?.provider === "discord" && profile) {
         const dbUser = await prisma.user.findUnique({ where: { discordId: String(profile.id) } });
         if (dbUser) token.uid = dbUser.id;
-      } else if (account?.provider === "dev" && user?.id) {
+      } else if ((account?.provider === "password" || account?.provider === "dev") && user?.id) {
         token.uid = user.id;
       }
       return token;
@@ -67,5 +105,3 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     },
   },
 });
-
-export const devLoginEnabled = devLogin;

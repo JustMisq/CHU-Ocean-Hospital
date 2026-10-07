@@ -6,6 +6,10 @@ import "./globals.css";
 
 const jakarta = Plus_Jakarta_Sans({ variable: "--font-jakarta", subsets: ["latin"] });
 
+// Tout le site lit la base (réglages, session) : rien n'est pré-généré au build,
+// qui n'a donc pas besoin d'accéder à la base (et le nom de l'hôpital n'est jamais figé).
+export const dynamic = "force-dynamic";
+
 export async function generateMetadata(): Promise<Metadata> {
   const { hospitalName } = await getSettings();
   return {

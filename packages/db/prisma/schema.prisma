@@ -28,32 +28,47 @@ model Setting {
   value String
 }
 
+/// Compte du site. Connexion par identifiant + mot de passe, ou par Discord si activé (les deux peuvent coexister).
 model User {
-  id        String   @id @default(cuid())
-  discordId String   @unique
-  username  String
-  avatarUrl String?
+  id                 String    @id @default(cuid())
+  /// Identifiant de connexion (minuscules). Null pour un compte uniquement Discord.
+  login              String?   @unique
+  passwordHash       String?
+  /// Mot de passe temporaire donné par la direction : à changer à la prochaine connexion.
+  mustChangePassword Boolean   @default(false)
+  /// Accès total, même sans grade (créé avec `npm run admin`).
+  isSuperAdmin       Boolean   @default(false)
+  /// Anti-force brute : compte bloqué 15 min après 5 échecs.
+  failedLogins       Int       @default(0)
+  lockedUntil        DateTime?
+  discordId          String?   @unique
+  /// Nom affiché (pseudo Discord ou nom choisi à l'inscription).
+  username           String
+  avatarUrl          String?
   /// Dernière liste de rôles Discord connue (IDs séparés par des virgules).
-  discordRoles String  @default("")
-  lastSyncAt   DateTime?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  discordRoles       String    @default("")
+  lastSyncAt         DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
   characters Character[]
   staff      StaffProfile?
+  auditLogs  AuditLog[]
 }
 
 /// Personnage RP. Un compte Discord peut en avoir plusieurs.
+/// Un personnage qui a des RDV n'est jamais supprimé, seulement archivé (le dossier médical reste).
 model Character {
-  id        String   @id @default(cuid())
-  userId    String
-  firstName String
-  lastName  String
-  birthDate DateTime
-  phone     String?
-  bloodType String?
-  allergies String?
-  createdAt DateTime @default(now())
+  id         String    @id @default(cuid())
+  userId     String
+  firstName  String
+  lastName   String
+  birthDate  DateTime
+  phone      String?
+  bloodType  String?
+  allergies  String?
+  createdAt  DateTime  @default(now())
+  archivedAt DateTime?
 
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   appointments Appointment[]
@@ -78,12 +93,12 @@ model Service {
 
 /// Compétence complémentaire (ex : chirurgien, psychiatre, formateur…).
 model Specialty {
-  id             String  @id @default(cuid())
-  slug           String  @unique
+  id             String @id @default(cuid())
+  slug           String @unique
   name           String
-  description    String  @default("")
-  order          Int     @default(0)
-  discordRoleIds String  @default("")
+  description    String @default("")
+  order          Int    @default(0)
+  discordRoleIds String @default("")
 
   staff StaffProfile[]
 }
@@ -109,6 +124,9 @@ model StaffProfile {
   userId      String   @unique
   displayName String
   bio         String?
+  /// Photo et bannière envoyées par le soignant (`/api/images/<id>`), prioritaires sur l'avatar Discord.
+  photoUrl    String?
+  bannerUrl   String?
   gradeId     String?
   isPublic    Boolean  @default(true)
   createdAt   DateTime @default(now())
@@ -150,12 +168,36 @@ model Appointment {
   createdAt    DateTime          @default(now())
   updatedAt    DateTime          @updatedAt
 
-  character Character    @relation(fields: [characterId], references: [id], onDelete: Cascade)
-  staff     StaffProfile @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  // Restrict : un RDV (et son compte rendu) ne disparaît jamais par effet de bord.
+  character Character    @relation(fields: [characterId], references: [id], onDelete: Restrict)
+  staff     StaffProfile @relation(fields: [staffId], references: [id], onDelete: Restrict)
   service   Service?     @relation(fields: [serviceId], references: [id], onDelete: SetNull)
 
   @@index([staffId, start])
   @@index([characterId])
+}
+
+/// Image envoyée depuis le site (photo, bannière), déjà redimensionnée par le navigateur.
+/// Stockée en base pour n'avoir aucun service de stockage à configurer. Servie par /api/images/[id].
+model Image {
+  id        String   @id @default(cuid())
+  mimeType  String
+  data      Bytes
+  createdAt DateTime @default(now())
+}
+
+/// Journal des actions du personnel (qui a fait quoi), consultable dans /pro/journal.
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String?
+  action    String
+  /// Résumé lisible de la cible et du changement (ex : « Dr. Hale → Médecin »).
+  summary   String
+  createdAt DateTime @default(now())
+
+  actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
 }
 
 /// File d'événements consommée par le bot Discord (notifications, logs).

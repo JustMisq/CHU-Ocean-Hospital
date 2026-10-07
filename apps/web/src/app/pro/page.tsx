@@ -18,7 +18,6 @@ export default async function AgendaPage({ searchParams }: PageProps<"/pro">) {
   const appointments = await prisma.appointment.findMany({
     where: {
       start: { gte: from, lte: addMinutes(from, 15 * 24 * 60) },
-      status: { not: "CANCELLED" },
       ...(!showAll && { staffId: user.staff.id }),
     },
     include: { character: true, staff: true },
@@ -51,21 +50,24 @@ export default async function AgendaPage({ searchParams }: PageProps<"/pro">) {
           <section key={key}>
             <h2 className="mb-2 text-sm font-semibold text-muted">{formatDay(items[0].start)}</h2>
             <ul className="card divide-y divide-line">
-              {items.map((a) => (
+              {items.map((a) => {
+                const cancelled = a.status === "CANCELLED";
+                return (
                 <li key={a.id}>
-                  <Link href={`/pro/rdv/${a.id}`} className="flex items-center gap-4 p-4 hover:bg-ocean-50/50">
-                    <span className="w-14 shrink-0 font-mono text-sm font-semibold text-ocean-700">{formatTime(a.start)}</span>
+                  <Link href={`/pro/rdv/${a.id}`} className={`flex items-center gap-4 p-4 hover:bg-ocean-50/50 ${cancelled ? "opacity-60" : ""}`}>
+                    <span className={`w-14 shrink-0 font-mono text-sm font-semibold ${cancelled ? "text-muted line-through" : "text-ocean-700"}`}>{formatTime(a.start)}</span>
                     <span className="min-w-0 flex-1">
-                      <span className="block font-medium">{a.character.firstName} {a.character.lastName}</span>
+                      <span className={`block font-medium ${cancelled ? "line-through" : ""}`}>{a.character.firstName} {a.character.lastName}</span>
                       <span className="block truncate text-sm text-muted">
-                        {showAll && `${a.staff.displayName} · `}{a.reason}
+                        {showAll && `${a.staff.displayName} · `}{cancelled ? a.cancelReason ?? "Annulé" : a.reason}
                       </span>
                     </span>
                     <StatusBadge status={a.status} />
                     <ChevronRight className="size-4 text-muted" />
                   </Link>
                 </li>
-              ))}
+                );
+              })}
             </ul>
           </section>
         ))}

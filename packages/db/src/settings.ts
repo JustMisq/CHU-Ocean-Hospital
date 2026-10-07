@@ -5,10 +5,14 @@ export const SETTING_DEFAULTS = {
   hospitalName: "Ocean Hospital",
   tagline: "Votre santé à Los Santos, en quelques clics.",
   emergencyNote: "En cas d'urgence en jeu, contactez le 911.",
+  /** Les citoyens peuvent créer leur compte eux-mêmes sur /inscription. */
+  allowSignup: "true",
   discordGuildId: "",
   requireGuildMember: "false",
   bookingWindowDays: "14",
   minNoticeMinutes: "15",
+  /** En dessous de ce délai avant le RDV, le patient ne peut plus annuler en ligne. */
+  cancelNoticeHours: "2",
   maxUpcomingPerCharacter: "3",
   maxCharactersPerUser: "5",
 };

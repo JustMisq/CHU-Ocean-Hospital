@@ -2,10 +2,12 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { parseRoleIds, prisma, queueBotEvent } from "@ocean/db";
+import { LOGIN_PATTERN, generateTempPassword, hashPassword, logAction, normalizeLogin, prisma, queueBotEvent } from "@ocean/db";
 import type { FormState } from "@/components/forms";
+import { isDiscordLinked } from "@/lib/features";
+import { deleteStoredImage, saveDataUrlImage } from "@/lib/images";
 import { requireStaff, type CurrentUser } from "@/lib/session";
-import { parseLocal, shiftDate } from "@/lib/time";
+import { formatDateTime, parseLocal, shiftDate } from "@/lib/time";
 
 const availabilitySchema = z
   .object({
@@ -48,13 +50,18 @@ export async function deleteAvailability(data: FormData) {
   revalidatePath("/pro/disponibilites");
 }
 
-/** Le soignant assigné, ou un membre ayant `appointments.manage_all`. */
+/** RDV encore ouvert, du soignant assigné ou d'un membre ayant `appointments.manage_all`. */
 async function loadManageableAppointment(id: string) {
   const user = await requireStaff();
-  const appointment = await prisma.appointment.findUnique({ where: { id } });
-  if (!appointment) return null;
+  const appointment = await prisma.appointment.findUnique({
+    where: { id },
+    include: { character: { select: { firstName: true, lastName: true } }, staff: { select: { displayName: true } } },
+  });
+  if (!appointment || !["PENDING", "CONFIRMED"].includes(appointment.status)) return null;
   if (appointment.staffId !== user.staff.id && !user.can("appointments.manage_all")) return null;
-  return appointment;
+  const isOthers = appointment.staffId !== user.staff.id;
+  const label = `${appointment.character.firstName} ${appointment.character.lastName} (RDV de ${appointment.staff.displayName}, ${formatDateTime(appointment.start)})`;
+  return { appointment, user, isOthers, label };
 }
 
 const reportSchema = z.object({ id: z.string(), report: z.string().trim().min(3, "Rédigez un compte rendu.").max(4000) });
@@ -62,53 +69,87 @@ const reportSchema = z.object({ id: z.string(), report: z.string().trim().min(3,
 export async function completeAppointment(_: FormState, data: FormData): Promise<FormState> {
   const parsed = reportSchema.safeParse(Object.fromEntries(data));
   if (!parsed.success) return { error: parsed.error.issues[0].message };
-  const appointment = await loadManageableAppointment(parsed.data.id);
-  if (!appointment) return { error: "Rendez-vous introuvable ou non autorisé." };
+  const loaded = await loadManageableAppointment(parsed.data.id);
+  if (!loaded) return { error: "Rendez-vous introuvable, déjà clôturé ou non autorisé." };
+  const { appointment, user, isOthers, label } = loaded;
+  if (appointment.start > new Date()) return { error: "La consultation n'a pas encore commencé." };
 
   await prisma.appointment.update({ where: { id: appointment.id }, data: { status: "COMPLETED", report: parsed.data.report } });
   await queueBotEvent("appointment.completed", { appointmentId: appointment.id });
+  if (isOthers) await logAction(user.id, "appointment.complete", `Clôture : ${label}`);
   revalidatePath(`/pro/rdv/${appointment.id}`);
   revalidatePath("/pro");
   return { ok: "Compte rendu enregistré." };
 }
 
 export async function markNoShow(data: FormData) {
-  const appointment = await loadManageableAppointment(String(data.get("id")));
-  if (!appointment) return;
+  const loaded = await loadManageableAppointment(String(data.get("id")));
+  if (!loaded || loaded.appointment.start > new Date()) return;
+  const { appointment, user, isOthers, label } = loaded;
   await prisma.appointment.update({ where: { id: appointment.id }, data: { status: "NO_SHOW" } });
+  if (isOthers) await logAction(user.id, "appointment.no_show", `Absence : ${label}`);
   revalidatePath(`/pro/rdv/${appointment.id}`);
   revalidatePath("/pro");
 }
 
 export async function cancelAppointmentAsStaff(_: FormState, data: FormData): Promise<FormState> {
-  const appointment = await loadManageableAppointment(String(data.get("id")));
-  if (!appointment) return { error: "Rendez-vous introuvable ou non autorisé." };
-  const reason = String(data.get("reason") ?? "").trim() || "Annulé par le soignant";
+  const loaded = await loadManageableAppointment(String(data.get("id")));
+  if (!loaded) return { error: "Rendez-vous introuvable, déjà clôturé ou non autorisé." };
+  const { appointment, user, label } = loaded;
+  const reason = String(data.get("reason") ?? "").trim().slice(0, 300) || "Annulé par le soignant";
 
   await prisma.appointment.update({ where: { id: appointment.id }, data: { status: "CANCELLED", cancelReason: reason } });
   await queueBotEvent("appointment.cancelled", { appointmentId: appointment.id, by: "staff", reason });
+  await logAction(user.id, "appointment.cancel", `Annulation : ${label} — « ${reason} »`);
   revalidatePath(`/pro/rdv/${appointment.id}`);
   revalidatePath("/pro");
   return { ok: "Rendez-vous annulé, le patient sera prévenu." };
 }
 
+/** Champ image du profil : "" = inchangée, "remove" = retirée, sinon data URL de la nouvelle image. */
+const imageField = z.string().max(1_000_000, "Image trop lourde.").default("");
+
 const profileSchema = z.object({
   displayName: z.string().trim().min(2, "Nom trop court.").max(60),
   bio: z.string().trim().max(1000).optional(),
+  photo: imageField,
+  banner: imageField,
   isPublic: z.literal("on").optional(),
 });
 
+/** Applique un champ image : renvoie la nouvelle URL (undefined = inchangée) et supprime l'ancienne image. */
+async function applyImage(value: string, current: string | null): Promise<{ url?: string | null } | { error: string }> {
+  if (!value) return {};
+  if (value === "remove") {
+    await deleteStoredImage(current);
+    return { url: null };
+  }
+  const saved = await saveDataUrlImage(value);
+  if ("error" in saved) return saved;
+  await deleteStoredImage(current);
+  return saved;
+}
+
 export async function updateOwnProfile(_: FormState, data: FormData): Promise<FormState> {
-  const { staff } = await requireStaff();
+  const { staff, id: userId } = await requireStaff();
   const parsed = profileSchema.safeParse(Object.fromEntries(data));
   if (!parsed.success) return { error: parsed.error.issues[0].message };
-  const { displayName, bio, isPublic } = parsed.data;
+  const { displayName, bio, photo, banner, isPublic } = parsed.data;
 
-  await prisma.staffProfile.update({
-    where: { id: staff.id },
-    data: { displayName, bio: bio || null, isPublic: isPublic === "on" },
-  });
-  revalidatePath("/pro/profil");
+  const photoResult = await applyImage(photo, staff.photoUrl);
+  if ("error" in photoResult) return photoResult;
+  const bannerResult = await applyImage(banner, staff.bannerUrl);
+  if ("error" in bannerResult) return bannerResult;
+
+  // Un seul nom pour un soignant : celui de sa fiche est aussi celui de son compte (en-tête, journal…).
+  await prisma.$transaction([
+    prisma.staffProfile.update({
+      where: { id: staff.id },
+      data: { displayName, bio: bio || null, photoUrl: photoResult.url, bannerUrl: bannerResult.url, isPublic: isPublic === "on" },
+    }),
+    prisma.user.update({ where: { id: userId }, data: { username: displayName } }),
+  ]);
+  revalidatePath("/", "layout");
   return { ok: "Profil mis à jour." };
 }
 
@@ -138,33 +179,60 @@ export async function updateStaffMember(_: FormState, data: FormData): Promise<F
   const grade = parsed.data.gradeId ? await prisma.grade.findUnique({ where: { id: parsed.data.gradeId } }) : null;
   if (grade && !canAssignGrade(user, grade.order)) return { error: "Vous ne pouvez pas attribuer ce grade." };
 
-  // Seuls les services / spécialités sans lien Discord sont attribués à la main.
+  // Seuls les services / spécialités sans lien Discord sont attribués à la main (tous, si Discord est désactivé).
   const [services, specialties] = await Promise.all([prisma.service.findMany(), prisma.specialty.findMany()]);
   const manual = <T extends { id: string; discordRoleIds: string }>(all: T[], field: string) =>
-    all.filter((x) => parseRoleIds(x.discordRoleIds).length === 0 && data.getAll(field).includes(x.id)).map((x) => ({ id: x.id }));
+    all.filter((x) => !isDiscordLinked(x) && data.getAll(field).includes(x.id)).map((x) => ({ id: x.id }));
   const linked = <T extends { id: string; discordRoleIds: string }>(all: T[], current: { id: string }[]) =>
-    current.filter((c) => all.some((a) => a.id === c.id && parseRoleIds(a.discordRoleIds).length > 0));
+    current.filter((c) => all.some((a) => a.id === c.id && isDiscordLinked(a)));
 
   const current = await prisma.staffProfile.findUniqueOrThrow({ where: { id: member.id }, select: { services: true, specialties: true } });
-  await prisma.staffProfile.update({
+  const updated = await prisma.staffProfile.update({
     where: { id: member.id },
     data: {
       gradeId: grade?.id ?? null,
       services: { set: [...linked(services, current.services).map((s) => ({ id: s.id })), ...manual(services, "services")] },
       specialties: { set: [...linked(specialties, current.specialties).map((s) => ({ id: s.id })), ...manual(specialties, "specialties")] },
     },
+    select: { services: { select: { name: true } }, specialties: { select: { name: true } } },
   });
+
+  const names = (xs: { name: string }[]) => xs.map((x) => x.name).sort().join(", ") || "aucun";
+  const changes = [
+    member.gradeId !== (grade?.id ?? null) && `grade ${member.grade?.name ?? "aucun"} → ${grade?.name ?? "retiré du personnel"}`,
+    names(current.services) !== names(updated.services) && `services : ${names(updated.services)}`,
+    names(current.specialties) !== names(updated.specialties) && `spécialités : ${names(updated.specialties)}`,
+  ].filter(Boolean);
+  if (changes.length) await logAction(user.id, "staff.update", `${member.displayName} — ${changes.join(" ; ")}`);
   revalidatePath("/pro/personnel");
   return { ok: "Enregistré." };
 }
 
+/** Compte par identifiant de connexion, ou par ID Discord. */
+function findAccount(identifier: string) {
+  const value = identifier.trim();
+  return prisma.user.findFirst({
+    where: { OR: [{ login: normalizeLogin(value) }, { discordId: value }] },
+    include: { staff: { include: { grade: true } } },
+  });
+}
+
+/** On ne gère que les comptes de grade strictement inférieur au sien (les patients sont toujours gérables). */
+function canManageAccount(user: CurrentUser, target: { isSuperAdmin: boolean; staff: { grade: { order: number } | null } | null }) {
+  if (user.isAdmin) return true;
+  if (target.isSuperAdmin) return false;
+  return !target.staff?.grade || canAssignGrade(user, target.staff.grade.order);
+}
+
+/** Passe un compte existant (ex : un citoyen inscrit) dans le personnel. */
 export async function addStaffMember(_: FormState, data: FormData): Promise<FormState> {
   const user = await requireStaff("staff.manage");
-  const discordId = String(data.get("discordId") ?? "").trim();
+  const identifier = String(data.get("identifier") ?? "");
   const gradeId = String(data.get("gradeId") ?? "");
 
-  const target = await prisma.user.findUnique({ where: { discordId } });
-  if (!target) return { error: "Aucun compte avec cet ID Discord. La personne doit s'être connectée au moins une fois au site." };
+  const target = await findAccount(identifier);
+  if (!target) return { error: "Aucun compte avec cet identifiant." };
+  if (!canManageAccount(user, target)) return { error: "Ce compte a un grade égal ou supérieur au vôtre." };
   const grade = await prisma.grade.findUnique({ where: { id: gradeId } });
   if (!grade) return { error: "Choisissez un grade." };
   if (!canAssignGrade(user, grade.order)) return { error: "Vous ne pouvez pas attribuer ce grade." };
@@ -174,6 +242,62 @@ export async function addStaffMember(_: FormState, data: FormData): Promise<Form
     update: { gradeId: grade.id },
     create: { userId: target.id, displayName: target.username, gradeId: grade.id },
   });
+  await logAction(user.id, "staff.add", `${target.username} ajouté(e) au personnel — ${grade.name}`);
   revalidatePath("/pro/personnel");
   return { ok: `${target.username} ajouté(e) au personnel.` };
+}
+
+const newStaffSchema = z.object({
+  login: z
+    .string()
+    .transform(normalizeLogin)
+    .refine((v) => LOGIN_PATTERN.test(v), "Identifiant : 3 à 32 caractères (lettres, chiffres, . _ -)."),
+  displayName: z.string().trim().min(2, "Nom affiché trop court.").max(60),
+  gradeId: z.string().min(1, "Choisissez un grade."),
+});
+
+/** Crée directement le compte d'un soignant, avec un mot de passe temporaire à lui transmettre en jeu. */
+export async function createStaffAccount(_: FormState, data: FormData): Promise<FormState> {
+  const user = await requireStaff("staff.manage");
+  const parsed = newStaffSchema.safeParse(Object.fromEntries(data));
+  if (!parsed.success) return { error: parsed.error.issues[0].message };
+  const { login, displayName, gradeId } = parsed.data;
+
+  const grade = await prisma.grade.findUnique({ where: { id: gradeId } });
+  if (!grade) return { error: "Choisissez un grade." };
+  if (!canAssignGrade(user, grade.order)) return { error: "Vous ne pouvez pas attribuer ce grade." };
+  if (await prisma.user.findUnique({ where: { login }, select: { id: true } })) {
+    return { error: "Cet identifiant existe déjà. Pour un citoyen déjà inscrit, utilisez « Promouvoir un compte existant »." };
+  }
+
+  const tempPassword = generateTempPassword();
+  await prisma.user.create({
+    data: {
+      login,
+      username: displayName,
+      passwordHash: await hashPassword(tempPassword),
+      mustChangePassword: true,
+      staff: { create: { displayName, gradeId: grade.id } },
+    },
+  });
+  await logAction(user.id, "staff.create", `Compte créé : ${displayName} (${login}) — ${grade.name}`);
+  revalidatePath("/pro/personnel");
+  return { ok: `Compte créé. Identifiant : ${login} · Mot de passe temporaire : ${tempPassword} — à transmettre en jeu, il ne sera plus affiché.` };
+}
+
+/** Nouveau mot de passe temporaire (mot de passe oublié). */
+export async function resetAccountPassword(_: FormState, data: FormData): Promise<FormState> {
+  const user = await requireStaff("staff.manage");
+  const target = await findAccount(String(data.get("identifier") ?? ""));
+  if (!target?.login) return { error: "Aucun compte avec cet identifiant." };
+  if (target.id === user.id) return { error: "Pour votre propre compte, utilisez la page « Mot de passe »." };
+  if (!canManageAccount(user, target)) return { error: "Ce compte a un grade égal ou supérieur au vôtre." };
+
+  const tempPassword = generateTempPassword();
+  await prisma.user.update({
+    where: { id: target.id },
+    data: { passwordHash: await hashPassword(tempPassword), mustChangePassword: true, failedLogins: 0, lockedUntil: null },
+  });
+  await logAction(user.id, "staff.password_reset", `Mot de passe réinitialisé : ${target.username} (${target.login})`);
+  return { ok: `Mot de passe temporaire de ${target.username} : ${tempPassword} — à transmettre en jeu, il ne sera plus affiché.` };
 }

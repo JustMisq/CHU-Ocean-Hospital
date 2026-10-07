@@ -22,7 +22,7 @@ export default async function DoctorsPage({ searchParams }: PageProps<"/medecins
     prisma.staffProfile.findMany({
       where: {
         ...bookableStaffWhere,
-        ...(q && { displayName: { contains: q } }),
+        ...(q && { displayName: { contains: q, mode: "insensitive" } }),
         ...(service && { services: { some: { slug: service } } }),
         ...(specialite && { specialties: { some: { slug: specialite } } }),
       },
@@ -68,7 +68,7 @@ export default async function DoctorsPage({ searchParams }: PageProps<"/medecins
           return (
             <li key={s.id}>
               <Link href={`/medecins/${s.id}`} className="card flex items-center gap-4 p-4 transition hover:border-ocean-300 hover:shadow-md">
-                <Avatar name={s.displayName} src={s.user.avatarUrl} />
+                <Avatar name={s.displayName} src={s.photoUrl ?? s.user.avatarUrl} size="md" />
                 <div className="min-w-0 flex-1">
                   <p className="flex flex-wrap items-center gap-2 font-semibold">{s.displayName} <GradeBadge grade={s.grade} /></p>
                   <p className="truncate text-sm text-muted">

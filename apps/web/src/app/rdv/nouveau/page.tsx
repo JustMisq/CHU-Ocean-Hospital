@@ -26,7 +26,7 @@ export default async function NewAppointmentPage({ searchParams }: PageProps<"/r
   if (!staff) notFound();
 
   const slot = await findFreeSlot(staff.id, new Date(startIso));
-  const characters = await prisma.character.findMany({ where: { userId: user.id }, orderBy: { createdAt: "asc" } });
+  const characters = await prisma.character.findMany({ where: { userId: user.id, archivedAt: null }, orderBy: { createdAt: "asc" } });
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-10">
@@ -34,7 +34,7 @@ export default async function NewAppointmentPage({ searchParams }: PageProps<"/r
       <h1 className="mt-3 text-2xl font-bold">Confirmer le rendez-vous</h1>
 
       <div className="card mt-6 flex items-center gap-4 p-5">
-        <Avatar name={staff.displayName} src={staff.user.avatarUrl} />
+        <Avatar name={staff.displayName} src={staff.photoUrl ?? staff.user.avatarUrl} size="md" />
         <div className="flex-1">
           <p className="font-semibold">{staff.displayName}</p>
           <p className="text-sm text-muted">{[staff.grade?.name, ...staff.services.map((s) => s.name)].filter(Boolean).join(" · ")}</p>
@@ -47,7 +47,12 @@ export default async function NewAppointmentPage({ searchParams }: PageProps<"/r
         )}
       </div>
 
-      {!slot ? (
+      {staff.userId === user.id ? (
+        <div className="card mt-4 p-6 text-center">
+          <p className="text-muted">C&apos;est votre propre fiche : vous ne pouvez pas prendre rendez-vous avec vous-même.</p>
+          <Link href="/medecins" className="btn-primary mt-4">Voir les autres soignants</Link>
+        </div>
+      ) : !slot ? (
         <div className="card mt-4 p-6 text-center">
           <p className="text-muted">Ce créneau n&apos;est plus disponible.</p>
           <Link href={`/medecins/${staff.id}`} className="btn-primary mt-4">Voir les autres créneaux</Link>

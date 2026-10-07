@@ -9,6 +9,7 @@ export default async function PatientLayout({ children }: LayoutProps<"/espace">
       <nav className="mt-4 flex gap-1 border-b border-line text-sm font-medium">
         <Link href="/espace" className="border-b-2 border-transparent px-3 py-2 text-muted hover:text-ink">Mes rendez-vous</Link>
         <Link href="/espace/personnages" className="border-b-2 border-transparent px-3 py-2 text-muted hover:text-ink">Mes personnages</Link>
+        {user.login && <Link href="/compte/mot-de-passe" className="ml-auto border-b-2 border-transparent px-3 py-2 text-muted hover:text-ink">Mot de passe</Link>}
       </nav>
       <div className="mt-6">{children}</div>
     </div>

@@ -14,11 +14,21 @@ export const bookableStaffWhere = {
   grade: { bookable: true },
 } satisfies Prisma.StaffProfileWhereInput;
 
-export type BookingRules = { windowDays: number; noticeMinutes: number };
+export type BookingRules = { windowDays: number; noticeMinutes: number; cancelNoticeHours: number };
 
 export async function bookingRules(): Promise<BookingRules> {
   const s = await getSettings();
-  return { windowDays: Number(s.bookingWindowDays) || 14, noticeMinutes: Number(s.minNoticeMinutes) || 0 };
+  const cancelNoticeHours = Number(s.cancelNoticeHours);
+  return {
+    windowDays: Number(s.bookingWindowDays) || 14,
+    noticeMinutes: Number(s.minNoticeMinutes) || 0,
+    cancelNoticeHours: Number.isFinite(cancelNoticeHours) ? cancelNoticeHours : 2,
+  };
+}
+
+/** Un patient peut annuler en ligne jusqu'à `cancelNoticeHours` avant le RDV. */
+export function canPatientCancel(start: Date, { cancelNoticeHours }: BookingRules) {
+  return start > addMinutes(new Date(), cancelNoticeHours * 60);
 }
 
 /** Créneaux libres d'un soignant, groupés par jour (clé YYYY-MM-DD). */

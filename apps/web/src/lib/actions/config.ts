@@ -2,8 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { ALL_PERMISSIONS, parseRoleIds, prisma, saveSettings, type Permission } from "@ocean/db";
+import { ALL_PERMISSIONS, logAction, parseRoleIds, prisma, saveSettings, type Permission } from "@ocean/db";
 import type { FormState } from "@/components/forms";
+import { discordEnabled } from "@/lib/features";
 import { requireStaff } from "@/lib/session";
 
 const requireConfig = () => requireStaff("settings.manage");
@@ -47,27 +48,33 @@ const generalSchema = z.object({
   hospitalName: z.string().trim().min(2, "Nom requis.").max(60),
   tagline: z.string().trim().min(2).max(120),
   emergencyNote: z.string().trim().max(160).default(""),
-  discordGuildId: z.string().trim().refine((v) => v === "" || /^\d{17,20}$/.test(v), "ID du serveur Discord invalide."),
+  allowSignup: checkbox,
+  discordGuildId: z.string().trim().default("").refine((v) => v === "" || /^\d{17,20}$/.test(v), "ID du serveur Discord invalide."),
   requireGuildMember: checkbox,
   bookingWindowDays: z.coerce.number().int().min(1, "Fenêtre de réservation : 1 à 60 jours.").max(60),
   minNoticeMinutes: z.coerce.number().int().min(0).max(24 * 60),
+  cancelNoticeHours: z.coerce.number().int().min(0, "Délai d'annulation : 0 à 72 heures.").max(72, "Délai d'annulation : 0 à 72 heures."),
   maxUpcomingPerCharacter: z.coerce.number().int().min(1).max(20),
   maxCharactersPerUser: z.coerce.number().int().min(1).max(20),
 });
 
 export async function saveGeneralSettings(_: FormState, data: FormData): Promise<FormState> {
-  await requireConfig();
+  const user = await requireConfig();
   const parsed = generalSchema.safeParse(Object.fromEntries(data));
   if (!parsed.success) return { error: parsed.error.issues[0].message };
-  const v = parsed.data;
+  const { discordGuildId, requireGuildMember, ...v } = parsed.data;
   await saveSettings(prisma, {
     ...v,
-    requireGuildMember: String(v.requireGuildMember),
+    allowSignup: String(v.allowSignup),
+    // Champs absents du formulaire quand Discord est désactivé : on garde les valeurs enregistrées.
+    ...(discordEnabled && { discordGuildId, requireGuildMember: String(requireGuildMember) }),
     bookingWindowDays: String(v.bookingWindowDays),
     minNoticeMinutes: String(v.minNoticeMinutes),
+    cancelNoticeHours: String(v.cancelNoticeHours),
     maxUpcomingPerCharacter: String(v.maxUpcomingPerCharacter),
     maxCharactersPerUser: String(v.maxCharactersPerUser),
   });
+  await logAction(user.id, "settings.update", "Réglages généraux modifiés");
   revalidateAll();
   return { ok: "Réglages enregistrés." };
 }
@@ -85,7 +92,7 @@ const serviceSchema = z.object({
 });
 
 export async function saveService(_: FormState, data: FormData): Promise<FormState> {
-  await requireConfig();
+  const user = await requireConfig();
   const parsed = serviceSchema.safeParse(Object.fromEntries(data));
   if (!parsed.success) return { error: parsed.error.issues[0].message };
   const { id, ...v } = parsed.data;
@@ -93,13 +100,15 @@ export async function saveService(_: FormState, data: FormData): Promise<FormSta
   const slug = await uniqueSlug("service", v.name, id);
   if (id) await prisma.service.update({ where: { id }, data: { ...v, slug } });
   else await prisma.service.create({ data: { ...v, slug } });
+  await logAction(user.id, id ? "service.update" : "service.create", `Service ${id ? "modifié" : "créé"} : ${v.name}`);
   revalidateAll();
   return { ok: id ? "Service mis à jour." : "Service créé." };
 }
 
 export async function deleteService(data: FormData) {
-  await requireConfig();
-  await prisma.service.delete({ where: { id: String(data.get("id")) } });
+  const user = await requireConfig();
+  const service = await prisma.service.delete({ where: { id: String(data.get("id")) } });
+  await logAction(user.id, "service.delete", `Service supprimé : ${service.name}`);
   revalidateAll();
 }
 
@@ -114,7 +123,7 @@ const specialtySchema = z.object({
 });
 
 export async function saveSpecialty(_: FormState, data: FormData): Promise<FormState> {
-  await requireConfig();
+  const user = await requireConfig();
   const parsed = specialtySchema.safeParse(Object.fromEntries(data));
   if (!parsed.success) return { error: parsed.error.issues[0].message };
   const { id, ...v } = parsed.data;
@@ -122,13 +131,15 @@ export async function saveSpecialty(_: FormState, data: FormData): Promise<FormS
   const slug = await uniqueSlug("specialty", v.name, id);
   if (id) await prisma.specialty.update({ where: { id }, data: { ...v, slug } });
   else await prisma.specialty.create({ data: { ...v, slug } });
+  await logAction(user.id, id ? "specialty.update" : "specialty.create", `Spécialité ${id ? "modifiée" : "créée"} : ${v.name}`);
   revalidateAll();
   return { ok: id ? "Spécialité mise à jour." : "Spécialité créée." };
 }
 
 export async function deleteSpecialty(data: FormData) {
-  await requireConfig();
-  await prisma.specialty.delete({ where: { id: String(data.get("id")) } });
+  const user = await requireConfig();
+  const specialty = await prisma.specialty.delete({ where: { id: String(data.get("id")) } });
+  await logAction(user.id, "specialty.delete", `Spécialité supprimée : ${specialty.name}`);
   revalidateAll();
 }
 
@@ -158,6 +169,7 @@ export async function saveGrade(_: FormState, data: FormData): Promise<FormState
   const payload = { ...v, permissions: permissions.join(",") };
   if (id) await prisma.grade.update({ where: { id }, data: payload });
   else await prisma.grade.create({ data: payload });
+  await logAction(user.id, id ? "grade.update" : "grade.create", `Grade ${id ? "modifié" : "créé"} : ${v.name} (${permissions.join(", ") || "aucune permission"})`);
   revalidateAll();
   return { ok: id ? "Grade mis à jour." : "Grade créé." };
 }
@@ -167,6 +179,7 @@ export async function deleteGrade(data: FormData) {
   const id = String(data.get("id"));
   if (id === user.staff.gradeId && !user.isAdmin) return;
   // Les membres de ce grade perdent leur accès pro (grade = null).
-  await prisma.grade.delete({ where: { id } });
+  const grade = await prisma.grade.delete({ where: { id } });
+  await logAction(user.id, "grade.delete", `Grade supprimé : ${grade.name}`);
   revalidateAll();
 }

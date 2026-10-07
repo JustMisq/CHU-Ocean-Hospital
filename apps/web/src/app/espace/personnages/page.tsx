@@ -13,7 +13,7 @@ const BLOOD_TYPES = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
 export default async function CharactersPage({ searchParams }: PageProps<"/espace/personnages">) {
   const user = await requireUser("/espace/personnages");
   const { retour } = await searchParams;
-  const characters = await prisma.character.findMany({ where: { userId: user.id }, orderBy: { createdAt: "asc" } });
+  const characters = await prisma.character.findMany({ where: { userId: user.id, archivedAt: null }, orderBy: { createdAt: "asc" } });
 
   return (
     <div className="grid gap-6 md:grid-cols-[1fr_1fr]">
@@ -31,7 +31,7 @@ export default async function CharactersPage({ searchParams }: PageProps<"/espac
             </div>
             <form action={deleteCharacter}>
               <input type="hidden" name="id" value={c.id} />
-              <ConfirmButton message="Supprimer ce personnage et ses rendez-vous ?" className="rounded-full p-2 text-muted hover:bg-red-50 hover:text-red-700">
+              <ConfirmButton message="Supprimer ce personnage ? Ses rendez-vous à venir seront annulés. Son dossier reste consultable par les soignants." className="rounded-full p-2 text-muted hover:bg-red-50 hover:text-red-700">
                 <Trash className="size-4" />
               </ConfirmButton>
             </form>

@@ -23,6 +23,7 @@ export default async function AppointmentDetailPage({ params }: PageProps<"/pro/
   const canManage = isMine || user.can("appointments.manage_all");
   const canSeeHistory = user.can("patients.history");
   const isOpen = appointment.status === "CONFIRMED" || appointment.status === "PENDING";
+  const hasStarted = appointment.start <= new Date();
   const { character } = appointment;
 
   // Dossier : consultations précédentes du personnage à l'hôpital.
@@ -58,8 +59,11 @@ export default async function AppointmentDetailPage({ params }: PageProps<"/pro/
       <div className="grid gap-6 lg:grid-cols-2">
         <section className="card p-6">
           <h2 className="font-bold">Patient</h2>
-          <p className="mt-2 text-lg font-semibold">{character.firstName} {character.lastName}</p>
-          <p className="text-sm text-muted">Né(e) le {formatDate(character.birthDate)} · Discord : {character.user.username}</p>
+          <p className="mt-2 flex flex-wrap items-center gap-2 text-lg font-semibold">
+            {character.firstName} {character.lastName}
+            {character.archivedAt && <span className="rounded-full bg-canvas px-2 py-0.5 text-xs font-medium text-muted">Personnage archivé</span>}
+          </p>
+          <p className="text-sm text-muted">Né(e) le {formatDate(character.birthDate)} · Joueur : {character.user.username}</p>
           <div className="mt-3 flex flex-wrap gap-4 text-sm">
             {character.phone && <span className="flex items-center gap-1.5"><Phone className="size-4 text-muted" />{character.phone}</span>}
             <span className="flex items-center gap-1.5"><Droplet className="size-4 text-red-500" />{character.bloodType ?? "Groupe inconnu"}</span>
@@ -90,21 +94,29 @@ export default async function AppointmentDetailPage({ params }: PageProps<"/pro/
             <p className="mt-3 whitespace-pre-line text-sm">{appointment.report}</p>
           ) : canManage && isOpen ? (
             <>
-              <ActionForm action={completeAppointment} className="mt-3 space-y-3">
-                <input type="hidden" name="id" value={appointment.id} />
-                <textarea name="report" rows={7} required className="input" placeholder="Examen, diagnostic, soins prodigués, traitement, arrêt / certificat…" />
-                <p className="text-xs text-muted">Le compte rendu sera visible par le patient.</p>
-                <SubmitButton pendingText="Enregistrement…">Clôturer la consultation</SubmitButton>
-              </ActionForm>
+              {hasStarted ? (
+                <ActionForm action={completeAppointment} className="mt-3 space-y-3">
+                  <input type="hidden" name="id" value={appointment.id} />
+                  <textarea name="report" rows={7} required maxLength={4000} className="input" placeholder="Examen, diagnostic, soins prodigués, traitement, arrêt / certificat…" />
+                  <p className="text-xs text-muted">Le compte rendu sera visible par le patient.</p>
+                  <SubmitButton pendingText="Enregistrement…">Clôturer la consultation</SubmitButton>
+                </ActionForm>
+              ) : (
+                <p className="mt-3 rounded-xl bg-canvas p-4 text-sm text-muted">
+                  Le compte rendu pourra être rédigé à partir de {formatTime(appointment.start)}, le {formatDate(appointment.start)}.
+                </p>
+              )}
 
               <div className="mt-6 border-t border-line pt-5">
-                <form action={markNoShow}>
+                {hasStarted && (
+                  <form action={markNoShow} className="mb-3">
+                    <input type="hidden" name="id" value={appointment.id} />
+                    <ConfirmButton message="Marquer le patient comme absent ?" className="btn-secondary w-full">Patient absent</ConfirmButton>
+                  </form>
+                )}
+                <ActionForm action={cancelAppointmentAsStaff} className="flex gap-2">
                   <input type="hidden" name="id" value={appointment.id} />
-                  <ConfirmButton message="Marquer le patient comme absent ?" className="btn-secondary w-full">Patient absent</ConfirmButton>
-                </form>
-                <ActionForm action={cancelAppointmentAsStaff} className="mt-3 flex gap-2">
-                  <input type="hidden" name="id" value={appointment.id} />
-                  <input name="reason" placeholder="Motif d'annulation" className="input" />
+                  <input name="reason" maxLength={300} placeholder="Motif d'annulation" className="input" />
                   <ConfirmButton message="Annuler ce rendez-vous ? Le patient sera prévenu.">Annuler</ConfirmButton>
                 </ActionForm>
               </div>
