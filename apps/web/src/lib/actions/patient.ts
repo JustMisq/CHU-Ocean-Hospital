@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { logAction, prisma, queueBotEvent } from "@ocean/db";
 import type { FormState } from "@/components/forms";
+import { identitySchema, medicalInfoSchema } from "@/lib/characters";
 import { getSettings, requireUser } from "@/lib/session";
 import { bookableStaffWhere, bookingRules, canPatientCancel, findFreeSlot } from "@/lib/slots";
 import { formatDateTime } from "@/lib/time";
@@ -86,14 +87,7 @@ export async function cancelAppointmentAsPatient(data: FormData) {
   revalidatePath("/pro");
 }
 
-const characterSchema = z.object({
-  firstName: z.string().trim().min(1, "Prénom requis.").max(40),
-  lastName: z.string().trim().min(1, "Nom requis.").max(40),
-  birthDate: z.iso.date("Date de naissance invalide."),
-  phone: z.string().trim().max(20).optional(),
-  bloodType: z.enum(["", "A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"]).optional(),
-  allergies: z.string().trim().max(300).optional(),
-});
+const characterSchema = identitySchema.extend(medicalInfoSchema.shape);
 
 export async function createCharacter(_: FormState, data: FormData): Promise<FormState> {
   const user = await requireUser("/espace/personnages");
@@ -104,23 +98,27 @@ export async function createCharacter(_: FormState, data: FormData): Promise<For
   if ((await prisma.character.count({ where: { userId: user.id, archivedAt: null } })) >= maxCharacters) {
     return { error: `Maximum ${maxCharacters} personnages par compte.` };
   }
-
-  const { birthDate, phone, bloodType, allergies, ...rest } = parsed.data;
-  await prisma.character.create({
-    data: {
-      ...rest,
-      userId: user.id,
-      birthDate: new Date(birthDate),
-      phone: phone || null,
-      bloodType: bloodType || null,
-      allergies: allergies || null,
-    },
-  });
+  await prisma.character.create({ data: { ...parsed.data, userId: user.id } });
 
   const back = data.get("retour");
   if (typeof back === "string" && back.startsWith("/") && !back.startsWith("//")) redirect(back);
-  revalidatePath("/espace/personnages");
+  revalidatePath("/espace", "layout");
   return { ok: "Personnage ajouté." };
+}
+
+/** Le joueur modifie son personnage (identité + infos complémentaires). */
+export async function updateCharacter(_: FormState, data: FormData): Promise<FormState> {
+  const user = await requireUser("/espace/personnages");
+  const parsed = characterSchema.safeParse(Object.fromEntries(data));
+  if (!parsed.success) return { error: parsed.error.issues[0].message };
+
+  const { count } = await prisma.character.updateMany({
+    where: { id: String(data.get("id")), userId: user.id, archivedAt: null },
+    data: parsed.data,
+  });
+  if (!count) return { error: "Personnage introuvable." };
+  revalidatePath("/espace", "layout");
+  return { ok: "Dossier mis à jour." };
 }
 
 /**
@@ -134,6 +132,8 @@ export async function deleteCharacter(data: FormData) {
     include: { _count: { select: { appointments: true } } },
   });
   if (!character) return;
+  // On garde toujours au moins un personnage (on le modifie plutôt que de le supprimer).
+  if ((await prisma.character.count({ where: { userId: user.id, archivedAt: null } })) <= 1) return;
 
   if (character._count.appointments === 0) {
     await prisma.character.delete({ where: { id: character.id } });

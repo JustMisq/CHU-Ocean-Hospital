@@ -1,11 +1,12 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { CalendarDays, Clock, UserRound } from "lucide-react";
+import { CalendarDays, Clock } from "lucide-react";
 import { prisma } from "@ocean/db";
 import { Avatar } from "@/components/avatar";
 import { ActionForm, SubmitButton } from "@/components/forms";
 import { bookAppointment } from "@/lib/actions/patient";
+import { ensureCharacter } from "@/lib/characters";
 import { requireUser } from "@/lib/session";
 import { bookableStaffWhere, findFreeSlot } from "@/lib/slots";
 import { formatDay, formatTime } from "@/lib/time";
@@ -26,6 +27,7 @@ export default async function NewAppointmentPage({ searchParams }: PageProps<"/r
   if (!staff) notFound();
 
   const slot = await findFreeSlot(staff.id, new Date(startIso));
+  await ensureCharacter(user);
   const characters = await prisma.character.findMany({ where: { userId: user.id, archivedAt: null }, orderBy: { createdAt: "asc" } });
 
   return (
@@ -56,13 +58,6 @@ export default async function NewAppointmentPage({ searchParams }: PageProps<"/r
         <div className="card mt-4 p-6 text-center">
           <p className="text-muted">Ce créneau n&apos;est plus disponible.</p>
           <Link href={`/medecins/${staff.id}`} className="btn-primary mt-4">Voir les autres créneaux</Link>
-        </div>
-      ) : characters.length === 0 ? (
-        <div className="card mt-4 p-6 text-center">
-          <UserRound className="mx-auto size-8 text-ocean-600" />
-          <p className="mt-2 font-semibold">Créez d&apos;abord votre personnage</p>
-          <p className="mt-1 text-sm text-muted">Le rendez-vous est pris au nom de votre personnage RP.</p>
-          <Link href={`/espace/personnages?retour=${encodeURIComponent(here)}`} className="btn-primary mt-4">Créer un personnage</Link>
         </div>
       ) : (
         <ActionForm action={bookAppointment} className="card mt-4 space-y-5 p-6">

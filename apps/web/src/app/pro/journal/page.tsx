@@ -11,6 +11,7 @@ const PAGE_SIZE = 50;
 const CATEGORIES = {
   staff: { label: "Personnel", prefixes: ["staff."] },
   rdv: { label: "Rendez-vous", prefixes: ["appointment."] },
+  patients: { label: "Dossiers", prefixes: ["patient."] },
   config: { label: "Configuration", prefixes: ["settings.", "service.", "specialty.", "grade."] },
 } as const;
 

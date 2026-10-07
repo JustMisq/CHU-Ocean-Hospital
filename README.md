@@ -39,10 +39,16 @@ Avec `AUTH_DEV_LOGIN="true"`, `/connexion` propose des comptes de démo sans mot
 
 | Qui | Comment |
 |---|---|
-| Citoyen / patient | S'inscrit lui-même sur `/inscription` (désactivable dans Configuration → Général), puis crée son personnage. |
+| Citoyen / patient | S'inscrit lui-même sur `/inscription` (désactivable dans Configuration → Général) avec le prénom et le nom de son personnage : le dossier patient est créé en même temps. |
 | EMS / médecin | La direction crée son compte dans **Personnel → Créer un compte soignant** : un mot de passe temporaire s'affiche une fois, à transmettre en jeu. Il le change à sa première connexion. |
 | Citoyen qui rejoint l'hôpital | **Personnel → Promouvoir un compte existant** : il garde son compte et ses personnages. |
 | Mot de passe oublié | **Personnel → Réinitialiser un mot de passe** (patients, ou soignants de grade inférieur). |
+
+Tout compte a au moins un personnage : s'il n'en a aucun (ex : compte soignant), il est créé automatiquement depuis son nom
+(« Dr. Jordan Reyes » → Jordan Reyes) à la première visite de l'espace patient ou de la prise de RDV.
+Seuls prénom et nom sont obligatoires ; date de naissance, groupe sanguin, téléphone et allergies se complètent plus tard,
+par le joueur (bandeau « dossier incomplet ») ou par un soignant depuis **Patients** (permission `patients.history`,
+ou soignant ayant déjà eu ce patient en RDV). Chaque modification par un soignant est tracée dans le journal.
 
 Mots de passe hachés avec scrypt. Compte bloqué 15 min après 5 échecs de connexion.
 
@@ -72,7 +78,7 @@ Photo et bannière d'un soignant : envoyées depuis **Mon profil** (glisser-dép
 
 | Permission | Effet |
 |---|---|
-| `patients.history` | Voir l'historique médical d'un patient sur un RDV |
+| `patients.history` | Page Patients : tous les dossiers (historique, infos médicales modifiables) |
 | `agenda.view_all` | Voir l'agenda de tout l'hôpital |
 | `appointments.manage_all` | Clôturer / annuler les RDV des autres soignants |
 | `staff.manage` | Page Personnel (uniquement les grades **inférieurs** au sien) |

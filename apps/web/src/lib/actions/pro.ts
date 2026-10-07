@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { LOGIN_PATTERN, generateTempPassword, hashPassword, logAction, normalizeLogin, prisma, queueBotEvent } from "@ocean/db";
 import type { FormState } from "@/components/forms";
+import { canAccessPatient, medicalInfoSchema } from "@/lib/characters";
 import { isDiscordLinked } from "@/lib/features";
 import { deleteStoredImage, saveDataUrlImage } from "@/lib/images";
 import { requireStaff, type CurrentUser } from "@/lib/session";
@@ -104,6 +105,26 @@ export async function cancelAppointmentAsStaff(_: FormState, data: FormData): Pr
   revalidatePath(`/pro/rdv/${appointment.id}`);
   revalidatePath("/pro");
   return { ok: "Rendez-vous annulé, le patient sera prévenu." };
+}
+
+/** Un soignant complète le dossier d'un patient (infos médicales, pas l'identité). */
+export async function updatePatientInfo(_: FormState, data: FormData): Promise<FormState> {
+  const user = await requireStaff();
+  const id = String(data.get("id") ?? "");
+  const parsed = medicalInfoSchema.safeParse(Object.fromEntries(data));
+  if (!parsed.success) return { error: parsed.error.issues[0].message };
+  if (!(await canAccessPatient(user, id))) return { error: "Accès au dossier non autorisé." };
+
+  const before = await prisma.character.findUniqueOrThrow({ where: { id } });
+  const after = await prisma.character.update({ where: { id }, data: parsed.data });
+  const labels = { birthDate: "date de naissance", phone: "téléphone", bloodType: "groupe sanguin", allergies: "allergies" } as const;
+  const changed = (Object.keys(labels) as (keyof typeof labels)[]).filter((k) => String(before[k] ?? "") !== String(after[k] ?? ""));
+  if (changed.length) {
+    await logAction(user.id, "patient.update", `Dossier de ${after.firstName} ${after.lastName} complété : ${changed.map((k) => labels[k]).join(", ")}`);
+  }
+  revalidatePath(`/pro/patients/${id}`);
+  revalidatePath("/pro/rdv", "layout");
+  return { ok: "Dossier mis à jour." };
 }
 
 /** Champ image du profil : "" = inchangée, "remove" = retirée, sinon data URL de la nouvelle image. */

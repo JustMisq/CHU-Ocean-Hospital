@@ -5,6 +5,7 @@ import { prisma } from "@ocean/db";
 import { ActionForm, ConfirmButton, SubmitButton } from "@/components/forms";
 import { StatusBadge } from "@/components/status-badge";
 import { cancelAppointmentAsStaff, completeAppointment, markNoShow } from "@/lib/actions/pro";
+import { missingInfo } from "@/lib/characters";
 import { requireStaff } from "@/lib/session";
 import { formatDate, formatDateTime, formatTime } from "@/lib/time";
 
@@ -25,6 +26,9 @@ export default async function AppointmentDetailPage({ params }: PageProps<"/pro/
   const isOpen = appointment.status === "CONFIRMED" || appointment.status === "PENDING";
   const hasStarted = appointment.start <= new Date();
   const { character } = appointment;
+  // Le soignant du RDV a accès au dossier de son patient, même sans la permission « dossiers patients ».
+  const canOpenFile = isMine || canSeeHistory;
+  const missing = canOpenFile ? missingInfo(character) : [];
 
   // Dossier : consultations précédentes du personnage à l'hôpital.
   const history = canSeeHistory
@@ -58,12 +62,23 @@ export default async function AppointmentDetailPage({ params }: PageProps<"/pro/
 
       <div className="grid gap-6 lg:grid-cols-2">
         <section className="card p-6">
-          <h2 className="font-bold">Patient</h2>
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="font-bold">Patient</h2>
+            {canOpenFile && <Link href={`/pro/patients/${character.id}`} className="text-sm font-medium text-ocean-600 hover:underline">Dossier complet →</Link>}
+          </div>
           <p className="mt-2 flex flex-wrap items-center gap-2 text-lg font-semibold">
             {character.firstName} {character.lastName}
             {character.archivedAt && <span className="rounded-full bg-canvas px-2 py-0.5 text-xs font-medium text-muted">Personnage archivé</span>}
           </p>
-          <p className="text-sm text-muted">Né(e) le {formatDate(character.birthDate)} · Joueur : {character.user.username}</p>
+          <p className="text-sm text-muted">
+            {character.birthDate ? `Né(e) le ${formatDate(character.birthDate)}` : "Date de naissance inconnue"} · Joueur : {character.user.username}
+          </p>
+          {missing.length > 0 && (
+            <p className="mt-2 text-sm text-amber-700">
+              Dossier incomplet ({missing.join(", ")}) : demandez-les au patient et{" "}
+              <Link href={`/pro/patients/${character.id}`} className="font-medium underline">complétez le dossier</Link>.
+            </p>
+          )}
           <div className="mt-3 flex flex-wrap gap-4 text-sm">
             {character.phone && <span className="flex items-center gap-1.5"><Phone className="size-4 text-muted" />{character.phone}</span>}
             <span className="flex items-center gap-1.5"><Droplet className="size-4 text-red-500" />{character.bloodType ?? "Groupe inconnu"}</span>

@@ -56,14 +56,15 @@ model User {
   auditLogs  AuditLog[]
 }
 
-/// Personnage RP. Un compte Discord peut en avoir plusieurs.
+/// Personnage RP (= dossier patient). Un compte peut en avoir plusieurs ; le premier est créé avec le compte.
 /// Un personnage qui a des RDV n'est jamais supprimé, seulement archivé (le dossier médical reste).
 model Character {
   id         String    @id @default(cuid())
   userId     String
   firstName  String
   lastName   String
-  birthDate  DateTime
+  /// Infos complémentaires facultatives : complétées plus tard par le joueur ou par un soignant.
+  birthDate  DateTime?
   phone      String?
   bloodType  String?
   allergies  String?

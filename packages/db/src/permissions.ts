@@ -3,7 +3,7 @@
  * Tout membre ayant un grade a accès à son propre agenda et à son profil.
  */
 export const PERMISSIONS = {
-  "patients.history": "Consulter l'historique médical des patients",
+  "patients.history": "Dossiers patients : consulter l'historique et compléter les infos",
   "agenda.view_all": "Voir l'agenda de tout l'hôpital",
   "appointments.manage_all": "Gérer les rendez-vous de tous les soignants",
   "staff.manage": "Gérer le personnel (grades, services, spécialités)",

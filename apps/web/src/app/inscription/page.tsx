@@ -23,17 +23,23 @@ export default async function SignupPage() {
         ) : (
           <>
             <p className="mt-2 text-center text-sm text-muted">
-              Un compte joueur, qui peut porter plusieurs personnages RP. Vous ajouterez votre personnage juste après.
+              Votre dossier patient est créé en même temps. Le reste (date de naissance, groupe sanguin…) pourra être complété plus tard.
             </p>
             <ActionForm action={signup} className="mt-6 space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="label" htmlFor="firstName">Prénom du personnage</label>
+                  <input id="firstName" name="firstName" required maxLength={40} className="input" />
+                </div>
+                <div>
+                  <label className="label" htmlFor="lastName">Nom</label>
+                  <input id="lastName" name="lastName" required maxLength={40} className="input" />
+                </div>
+              </div>
               <div>
                 <label className="label" htmlFor="login">Identifiant de connexion</label>
                 <input id="login" name="login" required minLength={3} maxLength={32} pattern="[A-Za-z0-9._\-]+" autoComplete="username" autoCapitalize="none" className="input" />
                 <p className="mt-1 text-xs text-muted">Lettres, chiffres, point, tiret. Il ne sera pas affiché.</p>
-              </div>
-              <div>
-                <label className="label" htmlFor="username">Pseudo</label>
-                <input id="username" name="username" required minLength={2} maxLength={40} placeholder="Votre pseudo de joueur" className="input" />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>

@@ -6,6 +6,7 @@ import { z } from "zod";
 import { LOGIN_PATTERN, hashPassword, normalizeLogin, prisma, verifyPassword } from "@ocean/db";
 import { signIn } from "@/auth";
 import type { FormState } from "@/components/forms";
+import { identitySchema } from "@/lib/characters";
 import { getCurrentUser, getSettings } from "@/lib/session";
 
 const safeCallback = (value: unknown) =>
@@ -33,27 +34,29 @@ export async function loginWithPassword(_: FormState, data: FormData): Promise<F
   }
 }
 
-const signupSchema = z
-  .object({
-    login: loginField,
-    username: z.string().trim().min(2, "Nom affiché : 2 caractères minimum.").max(40),
-    password: passwordField,
-    confirm: z.string(),
-  })
+const signupSchema = identitySchema
+  .extend({ login: loginField, password: passwordField, confirm: z.string() })
   .refine((v) => v.password === v.confirm, { message: "Les deux mots de passe ne correspondent pas." });
 
-/** Inscription libre d'un citoyen (désactivable dans la configuration). */
+/** Inscription libre d'un citoyen (désactivable dans la configuration) : compte + personnage en une fois. */
 export async function signup(_: FormState, data: FormData): Promise<FormState> {
   if ((await getSettings()).allowSignup !== "true") return { error: "Les inscriptions sont fermées. Adressez-vous à l'hôpital en jeu." };
   const parsed = signupSchema.safeParse(Object.fromEntries(data));
   if (!parsed.success) return { error: parsed.error.issues[0].message };
-  const { login, username, password } = parsed.data;
+  const { login, password, firstName, lastName } = parsed.data;
 
   if (await prisma.user.findUnique({ where: { login }, select: { id: true } })) return { error: "Cet identifiant est déjà pris." };
-  await prisma.user.create({ data: { login, username, passwordHash: await hashPassword(password) } });
+  await prisma.user.create({
+    data: {
+      login,
+      username: `${firstName} ${lastName}`,
+      passwordHash: await hashPassword(password),
+      characters: { create: { firstName, lastName } },
+    },
+  });
 
-  // Première étape après l'inscription : créer son personnage.
-  await signIn("password", { login, password, redirectTo: "/espace/personnages" });
+  // Le personnage existe déjà : direction la prise de RDV (le bandeau proposera de compléter le dossier).
+  await signIn("password", { login, password, redirectTo: "/medecins" });
 }
 
 const changeSchema = z

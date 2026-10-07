@@ -1,14 +1,14 @@
 import type { Metadata } from "next";
-import { Droplet, Phone, Trash } from "lucide-react";
+import { Droplet, Pencil, Phone, Trash } from "lucide-react";
 import { prisma } from "@ocean/db";
 import { ActionForm, ConfirmButton, SubmitButton } from "@/components/forms";
-import { createCharacter, deleteCharacter } from "@/lib/actions/patient";
+import { MedicalFields } from "@/components/medical-fields";
+import { createCharacter, deleteCharacter, updateCharacter } from "@/lib/actions/patient";
+import { missingInfo } from "@/lib/characters";
 import { requireUser } from "@/lib/session";
 import { formatDate } from "@/lib/time";
 
 export const metadata: Metadata = { title: "Mes personnages" };
-
-const BLOOD_TYPES = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
 
 export default async function CharactersPage({ searchParams }: PageProps<"/espace/personnages">) {
   const user = await requireUser("/espace/personnages");
@@ -18,64 +18,72 @@ export default async function CharactersPage({ searchParams }: PageProps<"/espac
   return (
     <div className="grid gap-6 md:grid-cols-[1fr_1fr]">
       <section className="space-y-3">
-        {characters.map((c) => (
-          <div key={c.id} className="card flex items-start gap-3 p-5">
-            <div className="flex-1">
-              <p className="font-semibold">{c.firstName} {c.lastName}</p>
-              <p className="text-sm text-muted">Né(e) le {formatDate(c.birthDate)}</p>
-              <div className="mt-2 flex flex-wrap gap-3 text-xs text-muted">
-                {c.phone && <span className="flex items-center gap-1"><Phone className="size-3.5" />{c.phone}</span>}
-                {c.bloodType && <span className="flex items-center gap-1"><Droplet className="size-3.5" />{c.bloodType}</span>}
+        {characters.map((c) => {
+          const missing = missingInfo(c);
+          return (
+            <details key={c.id} className="card group" open={missing.length > 0}>
+              <summary className="flex cursor-pointer list-none items-start gap-3 p-5">
+                <div className="flex-1">
+                  <p className="font-semibold">{c.firstName} {c.lastName}</p>
+                  <p className="text-sm text-muted">{c.birthDate ? `Né(e) le ${formatDate(c.birthDate)}` : "Date de naissance non renseignée"}</p>
+                  <div className="mt-2 flex flex-wrap gap-3 text-xs text-muted">
+                    {c.phone && <span className="flex items-center gap-1"><Phone className="size-3.5" />{c.phone}</span>}
+                    {c.bloodType && <span className="flex items-center gap-1"><Droplet className="size-3.5" />{c.bloodType}</span>}
+                  </div>
+                  {c.allergies && <p className="mt-2 text-xs"><span className="font-semibold">Allergies :</span> {c.allergies}</p>}
+                  {missing.length > 0 && <p className="mt-2 text-xs font-medium text-amber-700">À compléter : {missing.join(", ")}</p>}
+                </div>
+                <span className="flex items-center gap-1 rounded-full px-2 py-1 text-xs font-medium text-ocean-600 group-open:hidden"><Pencil className="size-3.5" /> Modifier</span>
+              </summary>
+
+              <div className="border-t border-line p-5">
+                <ActionForm action={updateCharacter} className="space-y-4">
+                  <input type="hidden" name="id" value={c.id} />
+                  <IdentityFields firstName={c.firstName} lastName={c.lastName} idPrefix={`${c.id}-`} />
+                  <MedicalFields character={c} idPrefix={`${c.id}-`} />
+                  <SubmitButton className="btn-primary w-full">Enregistrer</SubmitButton>
+                </ActionForm>
+                {characters.length > 1 && (
+                  <form action={deleteCharacter} className="mt-3 text-right">
+                    <input type="hidden" name="id" value={c.id} />
+                    <ConfirmButton
+                      message="Supprimer ce personnage ? Ses rendez-vous à venir seront annulés. Son dossier reste consultable par les soignants."
+                      className="inline-flex items-center gap-1 text-xs font-medium text-muted hover:text-red-700"
+                    >
+                      <Trash className="size-3.5" /> Supprimer ce personnage
+                    </ConfirmButton>
+                  </form>
+                )}
               </div>
-              {c.allergies && <p className="mt-2 text-xs"><span className="font-semibold">Allergies :</span> {c.allergies}</p>}
-            </div>
-            <form action={deleteCharacter}>
-              <input type="hidden" name="id" value={c.id} />
-              <ConfirmButton message="Supprimer ce personnage ? Ses rendez-vous à venir seront annulés. Son dossier reste consultable par les soignants." className="rounded-full p-2 text-muted hover:bg-red-50 hover:text-red-700">
-                <Trash className="size-4" />
-              </ConfirmButton>
-            </form>
-          </div>
-        ))}
-        {characters.length === 0 && <p className="card p-8 text-center text-sm text-muted">Aucun personnage pour l&apos;instant.</p>}
+            </details>
+          );
+        })}
       </section>
 
-      <ActionForm action={createCharacter} className="card h-fit space-y-4 p-6" resetOnSuccess>
-        <h2 className="font-bold">Nouveau personnage</h2>
-        {typeof retour === "string" && <input type="hidden" name="retour" value={retour} />}
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="label" htmlFor="firstName">Prénom</label>
-            <input id="firstName" name="firstName" required maxLength={40} className="input" />
-          </div>
-          <div>
-            <label className="label" htmlFor="lastName">Nom</label>
-            <input id="lastName" name="lastName" required maxLength={40} className="input" />
-          </div>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="label" htmlFor="birthDate">Date de naissance</label>
-            <input id="birthDate" name="birthDate" type="date" required className="input" />
-          </div>
-          <div>
-            <label className="label" htmlFor="phone">Téléphone (en jeu)</label>
-            <input id="phone" name="phone" maxLength={20} className="input" placeholder="555-0123" />
-          </div>
-        </div>
-        <div>
-          <label className="label" htmlFor="bloodType">Groupe sanguin</label>
-          <select id="bloodType" name="bloodType" className="input">
-            <option value="">Inconnu</option>
-            {BLOOD_TYPES.map((b) => <option key={b}>{b}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="label" htmlFor="allergies">Allergies / antécédents</label>
-          <textarea id="allergies" name="allergies" rows={2} maxLength={300} className="input" />
-        </div>
-        <SubmitButton className="btn-primary w-full">Ajouter</SubmitButton>
-      </ActionForm>
+      <details className="card h-fit" open={typeof retour === "string"}>
+        <summary className="cursor-pointer p-5 font-bold">+ Ajouter un autre personnage</summary>
+        <ActionForm action={createCharacter} className="space-y-4 border-t border-line p-5" resetOnSuccess>
+          {typeof retour === "string" && <input type="hidden" name="retour" value={retour} />}
+          <IdentityFields />
+          <MedicalFields idPrefix="new-" />
+          <SubmitButton className="btn-primary w-full">Ajouter</SubmitButton>
+        </ActionForm>
+      </details>
+    </div>
+  );
+}
+
+function IdentityFields({ firstName, lastName, idPrefix = "new-" }: { firstName?: string; lastName?: string; idPrefix?: string }) {
+  return (
+    <div className="grid grid-cols-2 gap-3">
+      <div>
+        <label className="label" htmlFor={`${idPrefix}firstName`}>Prénom</label>
+        <input id={`${idPrefix}firstName`} name="firstName" required maxLength={40} defaultValue={firstName} className="input" />
+      </div>
+      <div>
+        <label className="label" htmlFor={`${idPrefix}lastName`}>Nom</label>
+        <input id={`${idPrefix}lastName`} name="lastName" required maxLength={40} defaultValue={lastName} className="input" />
+      </div>
     </div>
   );
 }
