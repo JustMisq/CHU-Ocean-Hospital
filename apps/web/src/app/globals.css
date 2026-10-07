@@ -26,6 +26,72 @@ body {
   color: var(--color-ink);
 }
 
+/* ─── Menus déroulants ─────────────────────────────────────────────────────
+   Champ fermé : flèche maison au lieu de la flèche système (tous navigateurs).
+   Liste ouverte : stylée aux couleurs du site là où `appearance: base-select`
+   est supporté (Chrome / Edge) ; ailleurs, la liste native reste utilisée. */
+select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235b6b7a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  background-size: 1rem;
+  padding-right: 2.25rem;
+  cursor: pointer;
+}
+
+@supports (appearance: base-select) {
+  select,
+  ::picker(select) {
+    appearance: base-select;
+  }
+
+  /* La flèche maison suffit. */
+  select::picker-icon {
+    display: none;
+  }
+
+  ::picker(select) {
+    margin-block: 0.375rem;
+    padding: 0.25rem;
+    max-height: 18rem;
+    overflow-y: auto;
+    border: 1px solid var(--color-line);
+    border-radius: 0.75rem;
+    background: white;
+    box-shadow: 0 12px 32px -12px rgb(15 34 51 / 0.25);
+  }
+
+  select option {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: 0.5rem;
+    font-size: 0.875rem;
+    color: var(--color-ink);
+    cursor: pointer;
+  }
+
+  select option:hover,
+  select option:focus-visible {
+    outline: none;
+    background: var(--color-ocean-50);
+    color: var(--color-ocean-700);
+  }
+
+  select option:checked {
+    font-weight: 600;
+    color: var(--color-ocean-700);
+  }
+
+  select option::checkmark {
+    order: 1;
+    margin-left: auto;
+    color: var(--color-ocean-600);
+  }
+}
+
 @utility btn {
   @apply inline-flex cursor-pointer items-center justify-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50;
 }
