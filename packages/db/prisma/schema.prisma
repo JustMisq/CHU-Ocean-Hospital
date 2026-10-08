@@ -53,20 +53,25 @@ model User {
 /// Personnage RP (= dossier patient). Un compte peut en avoir plusieurs ; le premier est créé avec le compte.
 /// Un personnage qui a des RDV n'est jamais supprimé, seulement archivé (le dossier médical reste).
 model Character {
-  id         String    @id @default(cuid())
-  userId     String
-  firstName  String
-  lastName   String
+  id            String    @id @default(cuid())
+  userId        String
+  firstName     String
+  lastName      String
   /// Infos complémentaires facultatives : complétées plus tard par le joueur ou par un soignant.
-  birthDate  DateTime?
-  phone      String?
-  bloodType  String?
-  allergies  String?
-  createdAt  DateTime  @default(now())
-  archivedAt DateTime?
+  birthDate     DateTime?
+  phone         String?
+  bloodType     String?
+  allergies     String?
+  /// "M", "F" ou "X" (autre).
+  sex           String?
+  /// Numéro affiché sur les documents (ex : PAT-202607-6436), attribué à la première ordonnance.
+  patientNumber String?   @unique
+  createdAt     DateTime  @default(now())
+  archivedAt    DateTime?
 
-  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  appointments Appointment[]
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  appointments  Appointment[]
+  prescriptions Prescription[]
 
   @@index([userId])
 }
@@ -80,9 +85,16 @@ model Service {
   icon        String  @default("stethoscope")
   order       Int     @default(0)
   isPublic    Boolean @default(true)
+  /// Préfixe des numéros d'ordonnance (ex : KINE → KINE-202609-0001). Vide : ORD.
+  code        String  @default("")
+  /// Chef de service, affiché dans l'en-tête des ordonnances.
+  headId      String?
 
-  staff        StaffProfile[]
-  appointments Appointment[]
+  // Nom explicite = nom par défaut : la table de liaison existante (_ServiceToStaffProfile) est conservée.
+  staff         StaffProfile[] @relation("ServiceToStaffProfile")
+  head          StaffProfile?  @relation("ServiceHead", fields: [headId], references: [id], onDelete: SetNull)
+  appointments  Appointment[]
+  prescriptions Prescription[]
 }
 
 /// Compétence complémentaire (ex : chirurgien, psychiatre, formateur…).
@@ -112,26 +124,32 @@ model Grade {
 
 /// Fiche d'un membre du personnel.
 model StaffProfile {
-  id          String   @id @default(cuid())
-  userId      String   @unique
-  displayName String
-  bio         String?
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  displayName  String
+  bio          String?
   /// Photo et bannière envoyées par le soignant (`/api/images/<id>`). Sans photo : initiales.
-  photoUrl    String?
-  bannerUrl   String?
-  gradeId     String?
+  photoUrl     String?
+  bannerUrl    String?
+  gradeId      String?
   /// Choix du soignant : apparaître ou non dans l'annuaire.
-  isPublic    Boolean  @default(true)
+  isPublic     Boolean  @default(true)
   /// Choix de la direction : null = selon le grade, true / false = forcé pour ce membre.
-  bookable    Boolean?
-  createdAt   DateTime @default(now())
+  bookable     Boolean?
+  /// Titre affiché sous le nom sur les documents (ex : « Masseur-kinésithérapeute D.E. »).
+  jobTitle     String?
+  /// Signature dessinée dans « Mon profil » (PNG transparent), apposée sur les ordonnances.
+  signatureUrl String?
+  createdAt    DateTime @default(now())
 
   user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   grade          Grade?         @relation(fields: [gradeId], references: [id], onDelete: SetNull)
-  services       Service[]
+  services       Service[]      @relation("ServiceToStaffProfile")
+  headOf         Service[]      @relation("ServiceHead")
   specialties    Specialty[]
   availabilities Availability[]
   appointments   Appointment[]
+  prescriptions  Prescription[]
 }
 
 /// Plage de disponibilité publiée par un soignant, découpée en créneaux de `slotMinutes`.
@@ -164,11 +182,48 @@ model Appointment {
   updatedAt    DateTime          @updatedAt
 
   // Restrict : un RDV (et son compte rendu) ne disparaît jamais par effet de bord.
-  character Character    @relation(fields: [characterId], references: [id], onDelete: Restrict)
-  staff     StaffProfile @relation(fields: [staffId], references: [id], onDelete: Restrict)
-  service   Service?     @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  character     Character      @relation(fields: [characterId], references: [id], onDelete: Restrict)
+  staff         StaffProfile   @relation(fields: [staffId], references: [id], onDelete: Restrict)
+  service       Service?       @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  prescriptions Prescription[]
 
   @@index([staffId, start])
+  @@index([characterId])
+}
+
+enum PrescriptionKind {
+  ORDONNANCE
+  EXAMENS
+  CERTIFICAT
+}
+
+/// Ordonnance / prescription d'examens / certificat, rattaché au dossier du patient. Jamais modifié après émission :
+/// `snapshot` fige l'en-tête (patient, soignant, service, signature) pour que le PDF reste identique dans le temps.
+model Prescription {
+  id             String           @id @default(cuid())
+  /// Ex : KINE-202609-0001 (préfixe du service, mois, numéro du mois).
+  number         String           @unique
+  kind           PrescriptionKind @default(ORDONNANCE)
+  characterId    String
+  staffId        String
+  serviceId      String?
+  appointmentId  String?
+  /// Lignes : [{ name, instructions, quantity }].
+  items          Json             @default("[]")
+  /// Texte libre (certificat, remarques).
+  body           String           @default("")
+  renewable      Boolean          @default(false)
+  validityMonths Int              @default(3)
+  snapshot       Json
+  createdAt      DateTime         @default(now())
+  revokedAt      DateTime?
+  revokedReason  String?
+
+  character   Character    @relation(fields: [characterId], references: [id], onDelete: Restrict)
+  staff       StaffProfile @relation(fields: [staffId], references: [id], onDelete: Restrict)
+  service     Service?     @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  appointment Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+
   @@index([characterId])
 }
 

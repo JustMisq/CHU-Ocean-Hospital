@@ -9,6 +9,7 @@ const timeFmt = fmt({ hour: "2-digit", minute: "2-digit" });
 const dayFmt = fmt({ weekday: "long", day: "numeric", month: "long" });
 const shortDayFmt = fmt({ weekday: "short", day: "numeric", month: "short" });
 const dateFmt = fmt({ day: "2-digit", month: "2-digit", year: "numeric" });
+const longDateFmt = fmt({ day: "numeric", month: "long", year: "numeric" });
 const keyFmt = new Intl.DateTimeFormat("en-CA", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit" });
 
 export const formatTime = (d: Date) => timeFmt.format(d);
@@ -18,6 +19,8 @@ const upperFirst = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 export const formatDay = (d: Date) => upperFirst(dayFmt.format(d));
 export const formatShortDay = (d: Date) => shortDayFmt.format(d);
 export const formatDate = (d: Date) => dateFmt.format(d);
+/** "25 septembre 2026" */
+export const formatLongDate = (d: Date) => longDateFmt.format(d);
 export const formatDateTime = (d: Date) => `${formatDay(d)} à ${formatTime(d)}`;
 
 /** Clé de jour "YYYY-MM-DD" dans le fuseau du serveur. */

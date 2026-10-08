@@ -1,7 +1,8 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { TriangleAlert } from "lucide-react";
+import { FilePlus, TriangleAlert } from "lucide-react";
+import { PrescriptionList } from "@/components/prescription-list";
 import { prisma } from "@ocean/db";
 import { AttendanceSummary } from "@/components/attendance-summary";
 import { ActionForm, SubmitButton } from "@/components/forms";
@@ -14,8 +15,9 @@ import { formatDate, formatDateTime } from "@/lib/time";
 
 export const metadata: Metadata = { title: "Dossier patient" };
 
-export default async function PatientFilePage({ params }: PageProps<"/pro/patients/[id]">) {
+export default async function PatientFilePage({ params, searchParams }: PageProps<"/pro/patients/[id]">) {
   const { id } = await params;
+  const { ordonnance } = await searchParams;
   const user = await requireStaff();
   if (!(await canAccessPatient(user, id))) notFound();
 
@@ -24,6 +26,7 @@ export default async function PatientFilePage({ params }: PageProps<"/pro/patien
     include: {
       user: { select: { username: true } },
       appointments: { include: { staff: { select: { displayName: true } }, service: { select: { name: true } } }, orderBy: { start: "desc" } },
+      prescriptions: { orderBy: { createdAt: "desc" } },
     },
   });
   if (!patient) notFound();
@@ -38,7 +41,10 @@ export default async function PatientFilePage({ params }: PageProps<"/pro/patien
           {patient.firstName} {patient.lastName}
           {patient.archivedAt && <span className="rounded-full bg-canvas px-2 py-0.5 text-xs font-medium text-muted">Personnage archivé</span>}
         </h1>
-        <p className="mt-1 text-sm text-muted">Joueur : {patient.user.username} · Dossier créé le {formatDate(patient.createdAt)}</p>
+        <p className="mt-1 text-sm text-muted">
+          Joueur : {patient.user.username} · Dossier créé le {formatDate(patient.createdAt)}
+          {patient.patientNumber && ` · N° ${patient.patientNumber}`}
+        </p>
         <div className="mt-3"><AttendanceSummary attendance={attendanceOf(patient.appointments.map((a) => a.status))} /></div>
         {patient.allergies && (
           <p className="mt-3 flex items-start gap-2 rounded-xl bg-red-50 p-3 text-sm text-red-900">
@@ -59,21 +65,39 @@ export default async function PatientFilePage({ params }: PageProps<"/pro/patien
           </ActionForm>
         </section>
 
-        <section>
-          <h2 className="font-bold">Consultations ({patient.appointments.length})</h2>
-          <ul className="mt-3 space-y-2">
-            {patient.appointments.map((a) => (
-              <li key={a.id} className="card p-4 text-sm">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Link href={`/pro/rdv/${a.id}`} className="font-medium hover:underline">{formatDateTime(a.start)}</Link>
-                  <StatusBadge status={a.status} />
-                </div>
-                <p className="text-muted">{a.staff.displayName}{a.service && ` · ${a.service.name}`} — {a.reason}</p>
-                {a.report && <p className="mt-2 whitespace-pre-line rounded-xl bg-canvas p-3">{a.report}</p>}
-              </li>
-            ))}
-            {patient.appointments.length === 0 && <li className="card p-6 text-center text-sm text-muted">Aucune consultation pour l&apos;instant.</li>}
-          </ul>
+        <section className="space-y-8">
+          <div>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="font-bold">Ordonnances & certificats ({patient.prescriptions.length})</h2>
+              {user.can("prescriptions.write") && (
+                <Link href={`/pro/patients/${patient.id}/ordonnance`} className="btn-primary"><FilePlus className="size-4" /> Nouveau document</Link>
+              )}
+            </div>
+            <div className="mt-3">
+              <PrescriptionList
+                prescriptions={patient.prescriptions}
+                canRevoke={(p) => p.staffId === user.staff.id || user.isAdmin}
+                highlightId={typeof ordonnance === "string" ? ordonnance : undefined}
+              />
+            </div>
+          </div>
+
+          <div>
+            <h2 className="font-bold">Consultations ({patient.appointments.length})</h2>
+            <ul className="mt-3 space-y-2">
+              {patient.appointments.map((a) => (
+                <li key={a.id} className="card p-4 text-sm">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Link href={`/pro/rdv/${a.id}`} className="font-medium hover:underline">{formatDateTime(a.start)}</Link>
+                    <StatusBadge status={a.status} />
+                  </div>
+                  <p className="text-muted">{a.staff.displayName}{a.service && ` · ${a.service.name}`} — {a.reason}</p>
+                  {a.report && <p className="mt-2 whitespace-pre-line rounded-xl bg-canvas p-3">{a.report}</p>}
+                </li>
+              ))}
+              {patient.appointments.length === 0 && <li className="card p-6 text-center text-sm text-muted">Aucune consultation pour l&apos;instant.</li>}
+            </ul>
+          </div>
         </section>
       </div>
     </div>

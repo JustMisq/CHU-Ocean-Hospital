@@ -39,6 +39,8 @@ const generalSchema = z.object({
   hospitalName: z.string().trim().min(2, "Nom requis.").max(60),
   tagline: z.string().trim().min(2).max(120),
   emergencyNote: z.string().trim().max(160).default(""),
+  hospitalCity: z.string().trim().min(2, "Ville requise.").max(40),
+  hospitalAddress: z.string().trim().min(2, "Adresse requise.").max(80),
   allowSignup: checkbox,
   bookingWindowDays: z.coerce.number().int().min(1, "Fenêtre de réservation : 1 à 60 jours.").max(60),
   minNoticeMinutes: z.coerce.number().int().min(0).max(24 * 60),
@@ -75,6 +77,13 @@ const serviceSchema = z.object({
   icon: z.string().default("stethoscope"),
   order: z.coerce.number().int().default(0),
   isPublic: checkbox,
+  code: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .default("")
+    .refine((v) => /^[A-Z0-9]{0,8}$/.test(v), "Code ordonnances : 8 lettres / chiffres max, sans espace."),
+  headId: z.string().optional().transform((v) => v || null),
 });
 
 export async function saveService(_: FormState, data: FormData): Promise<FormState> {

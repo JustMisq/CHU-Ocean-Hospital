@@ -6,6 +6,7 @@ import { GradeBadge } from "@/components/grade-badge";
 import { updateOwnProfile } from "@/lib/actions/pro";
 import { requireStaff } from "@/lib/session";
 import { AppearanceFields } from "./appearance-fields";
+import { SignaturePad } from "./signature-pad";
 
 export const metadata: Metadata = { title: "Mon profil" };
 
@@ -36,10 +37,15 @@ export default async function ProfilePage() {
           <input id="displayName" name="displayName" required minLength={2} maxLength={60} defaultValue={staff.displayName} className="input" />
         </div>
         <div>
+          <label className="label" htmlFor="jobTitle">Titre (sur les ordonnances)</label>
+          <input id="jobTitle" name="jobTitle" maxLength={80} defaultValue={staff.jobTitle ?? ""} placeholder="Ex : Masseur-kinésithérapeute D.E., Médecin urgentiste…" className="input" />
+        </div>
+        <div>
           <label className="label" htmlFor="bio">Présentation</label>
           <textarea id="bio" name="bio" rows={5} maxLength={1000} defaultValue={staff.bio ?? ""} className="input" />
         </div>
         <AppearanceFields name={staff.displayName} photoUrl={staff.photoUrl} bannerUrl={staff.bannerUrl} />
+        <SignaturePad currentUrl={staff.signatureUrl} />
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" name="isPublic" defaultChecked={staff.isPublic} className="size-4 accent-ocean-600" />
           Apparaître dans l&apos;annuaire public et être réservable

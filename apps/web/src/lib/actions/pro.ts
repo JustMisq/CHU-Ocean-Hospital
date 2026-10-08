@@ -146,7 +146,7 @@ export async function updatePatientInfo(_: FormState, data: FormData): Promise<F
 
   const before = await prisma.character.findUniqueOrThrow({ where: { id } });
   const after = await prisma.character.update({ where: { id }, data: parsed.data });
-  const labels = { birthDate: "date de naissance", phone: "téléphone", bloodType: "groupe sanguin", allergies: "allergies" } as const;
+  const labels = { birthDate: "date de naissance", sex: "sexe", phone: "téléphone", bloodType: "groupe sanguin", allergies: "allergies" } as const;
   const changed = (Object.keys(labels) as (keyof typeof labels)[]).filter((k) => String(before[k] ?? "") !== String(after[k] ?? ""));
   if (changed.length) {
     await logAction(user.id, "patient.update", `Dossier de ${after.firstName} ${after.lastName} complété : ${changed.map((k) => labels[k]).join(", ")}`);
@@ -162,8 +162,10 @@ const imageField = z.string().max(1_000_000, "Image trop lourde.").default("");
 const profileSchema = z.object({
   displayName: z.string().trim().min(2, "Nom trop court.").max(60),
   bio: z.string().trim().max(1000).optional(),
+  jobTitle: z.string().trim().max(80).optional(),
   photo: imageField,
   banner: imageField,
+  signature: imageField.refine((v) => !v || v === "remove" || v.startsWith("data:image/png;"), "Signature invalide."),
   isPublic: z.literal("on").optional(),
 });
 
@@ -184,18 +186,29 @@ export async function updateOwnProfile(_: FormState, data: FormData): Promise<Fo
   const { staff, id: userId } = await requireStaff();
   const parsed = profileSchema.safeParse(Object.fromEntries(data));
   if (!parsed.success) return { error: parsed.error.issues[0].message };
-  const { displayName, bio, photo, banner, isPublic } = parsed.data;
+  const { displayName, bio, jobTitle, photo, banner, signature, isPublic } = parsed.data;
 
   const photoResult = await applyImage(photo, staff.photoUrl);
   if ("error" in photoResult) return photoResult;
   const bannerResult = await applyImage(banner, staff.bannerUrl);
   if ("error" in bannerResult) return bannerResult;
+  // Les ordonnances déjà émises gardent leur propre copie de la signature (voir buildSnapshot).
+  const signatureResult = await applyImage(signature, staff.signatureUrl);
+  if ("error" in signatureResult) return signatureResult;
 
   // Un seul nom pour un soignant : celui de sa fiche est aussi celui de son compte (en-tête, journal…).
   await prisma.$transaction([
     prisma.staffProfile.update({
       where: { id: staff.id },
-      data: { displayName, bio: bio || null, photoUrl: photoResult.url, bannerUrl: bannerResult.url, isPublic: isPublic === "on" },
+      data: {
+        displayName,
+        bio: bio || null,
+        jobTitle: jobTitle || null,
+        photoUrl: photoResult.url,
+        bannerUrl: bannerResult.url,
+        signatureUrl: signatureResult.url,
+        isPublic: isPublic === "on",
+      },
     }),
     prisma.user.update({ where: { id: userId }, data: { username: displayName } }),
   ]);

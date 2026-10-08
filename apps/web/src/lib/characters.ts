@@ -3,12 +3,14 @@ import { z } from "zod";
 import { prisma, type AppointmentStatus, type Character, type Permission } from "@ocean/db";
 
 export const BLOOD_TYPES = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"] as const;
+export const SEXES = { M: "Homme", F: "Femme", X: "Autre" } as const;
 
 /** Infos complémentaires d'un dossier : toutes facultatives, complétées par le joueur ou un soignant. */
 export const medicalInfoSchema = z.object({
   birthDate: z.union([z.literal(""), z.iso.date("Date de naissance invalide.")]).optional().transform((v) => (v ? new Date(v) : null)),
   phone: z.string().trim().max(20).optional().transform((v) => v || null),
   bloodType: z.enum(["", ...BLOOD_TYPES]).optional().transform((v) => v || null),
+  sex: z.enum(["", "M", "F", "X"]).optional().transform((v) => v || null),
   allergies: z.string().trim().max(300).optional().transform((v) => v || null),
 });
 

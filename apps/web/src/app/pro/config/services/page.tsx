@@ -8,7 +8,10 @@ import { ConfigItem, DeleteButton } from "../shared";
 export const metadata: Metadata = { title: "Services" };
 
 export default async function ServicesConfigPage() {
-  const services = await prisma.service.findMany({ orderBy: { order: "asc" }, include: { _count: { select: { staff: true } } } });
+  const [services, staff] = await Promise.all([
+    prisma.service.findMany({ orderBy: { order: "asc" }, include: { _count: { select: { staff: true } }, head: { select: { displayName: true } } } }),
+    prisma.staffProfile.findMany({ where: { gradeId: { not: null } }, select: { id: true, displayName: true }, orderBy: { displayName: "asc" } }),
+  ]);
 
   return (
     <div className="grid gap-6 xl:grid-cols-[1fr_380px]">
@@ -17,9 +20,9 @@ export default async function ServicesConfigPage() {
           <li key={s.id}>
             <ConfigItem
               title={<><ServiceIcon name={s.icon} className="size-4 text-ocean-600" /> {s.name} {!s.isPublic && <span className="text-xs font-normal text-muted">(masqué)</span>}</>}
-              subtitle={`${s._count.staff} membre(s) · ordre ${s.order}`}
+              subtitle={[`${s._count.staff} membre(s)`, `ordre ${s.order}`, s.code && `ordonnances ${s.code}-…`, s.head && `chef : ${s.head.displayName}`].filter(Boolean).join(" · ")}
             >
-              <ServiceForm service={s} />
+              <ServiceForm service={s} staff={staff} />
               <div className="mt-4 border-t border-line pt-4">
                 <DeleteButton action={deleteService} id={s.id} message={`Supprimer le service « ${s.name} » ? Les RDV passés sont conservés.`} />
               </div>
@@ -31,13 +34,13 @@ export default async function ServicesConfigPage() {
 
       <div className="card h-fit p-5">
         <h2 className="mb-4 font-bold">Nouveau service</h2>
-        <ServiceForm />
+        <ServiceForm staff={staff} />
       </div>
     </div>
   );
 }
 
-function ServiceForm({ service }: { service?: Service }) {
+function ServiceForm({ service, staff }: { service?: Service; staff: { id: string; displayName: string }[] }) {
   return (
     <ActionForm action={saveService} className="space-y-4" resetOnSuccess={!service}>
       {service && <input type="hidden" name="id" value={service.id} />}
@@ -61,6 +64,20 @@ function ServiceForm({ service }: { service?: Service }) {
           <input name="order" type="number" defaultValue={service?.order ?? 0} className="input" />
         </div>
       </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="label">Code ordonnances</label>
+          <input name="code" maxLength={8} defaultValue={service?.code} placeholder="Ex : KINE" className="input font-mono uppercase" />
+        </div>
+        <div>
+          <label className="label">Chef de service</label>
+          <select name="headId" defaultValue={service?.headId ?? ""} className="input">
+            <option value="">— Aucun —</option>
+            {staff.map((m) => <option key={m.id} value={m.id}>{m.displayName}</option>)}
+          </select>
+        </div>
+      </div>
+      <p className="-mt-2 text-xs text-muted">En-tête des ordonnances de ce service : numéros {service?.code || "KINE"}-AAAAMM-0001, chef de service dans la marge.</p>
       <label className="flex items-center gap-2 text-sm">
         <input type="checkbox" name="isPublic" defaultChecked={service?.isPublic ?? true} className="size-4 accent-ocean-600" />
         Visible sur le site public

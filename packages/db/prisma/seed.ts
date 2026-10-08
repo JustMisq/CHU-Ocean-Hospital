@@ -25,9 +25,9 @@ const ALL = ALL_PERMISSIONS.join(",");
 const grades = [
   { name: "Directeur", order: 100, color: "#7c3aed", permissions: ALL },
   { name: "Directeur adjoint", order: 90, color: "#7c3aed", permissions: ALL },
-  { name: "Chef de service", order: 70, color: "#0a6f98", permissions: "patients.history,agenda.view_all,appointments.manage_all,staff.manage,stats.view,audit.view" },
-  { name: "Médecin", order: 50, color: "#0a6f98", permissions: "patients.history,agenda.view_all" },
-  { name: "Interne", order: 30, color: "#138cb8", permissions: "patients.history" },
+  { name: "Chef de service", order: 70, color: "#0a6f98", permissions: "patients.history,prescriptions.write,agenda.view_all,appointments.manage_all,staff.manage,stats.view,audit.view" },
+  { name: "Médecin", order: 50, color: "#0a6f98", permissions: "patients.history,prescriptions.write,agenda.view_all" },
+  { name: "Interne", order: 30, color: "#138cb8", permissions: "patients.history,prescriptions.write" },
   { name: "Ambulancier", order: 20, color: "#dc2626", permissions: "patients.history", bookable: false },
   { name: "Stagiaire", order: 10, color: "#64748b", permissions: "", bookable: false },
 ];

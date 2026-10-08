@@ -5,6 +5,9 @@ export const SETTING_DEFAULTS = {
   hospitalName: "Ocean Hospital",
   tagline: "Votre santé à Los Santos, en quelques clics.",
   emergencyNote: "En cas d'urgence en jeu, contactez le 911.",
+  /** Ville / adresse imprimée sur les ordonnances (« Los Santos, le … »). */
+  hospitalCity: "Los Santos",
+  hospitalAddress: "Los Santos, San Andreas",
   /** Les citoyens peuvent créer leur compte eux-mêmes sur /inscription. */
   allowSignup: "true",
   bookingWindowDays: "14",

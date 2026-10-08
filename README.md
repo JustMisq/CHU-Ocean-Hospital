@@ -65,6 +65,7 @@ Photo et bannière d'un soignant : envoyées depuis **Mon profil** (glisser-dép
 | Permission | Effet |
 |---|---|
 | `patients.history` | Page Patients : tous les dossiers (historique, infos médicales modifiables) |
+| `prescriptions.write` | Rédiger ordonnances, prescriptions d'examens et certificats (patients dont on a le dossier) |
 | `agenda.view_all` | Voir l'agenda de tout l'hôpital |
 | `appointments.manage_all` | Clôturer / annuler les RDV des autres soignants |
 | `staff.manage` | Page Personnel (uniquement les grades **inférieurs** au sien) |
@@ -79,6 +80,19 @@ Photo et bannière d'un soignant : envoyées depuis **Mon profil** (glisser-dép
   le soignant (ou `appointments.manage_all`) peut fixer librement une nouvelle date depuis la fiche du RDV. Tracé dans le journal.
 - **Absences** : un RDV marqué « Patient absent » compte dans le dossier. Le nombre de RDV, d'honorés et d'absences s'affiche
   sur le dossier patient, la fiche du RDV et dans « Mes personnages ». Un avertissement est affiché au patient avant de réserver.
+
+## Ordonnances & certificats
+
+Depuis le dossier patient ou la fiche d'un RDV (permission `prescriptions.write`) : **Ordonnance**, **Prescription d'examens**
+ou **Certificat médical**, générés en PDF (`/api/ordonnances/<id>`, `?dl=1` pour télécharger) et rattachés au dossier.
+Le patient les retrouve dans **Mon espace → Mes ordonnances**.
+
+- **Par service** (Configuration → Services) : code de numérotation (`KINE` → `KINE-202609-0001`) et chef de service affiché en marge.
+- **Par soignant** (Mon profil) : titre imprimé (« Masseur-kinésithérapeute D.E. ») et signature dessinée, apposée sur le cachet.
+- **Hôpital** (Configuration → Général) : ville et adresse imprimées.
+- Le patient reçoit un n° (`PAT-AAAAMM-NNNN`, code-barres) à sa première ordonnance.
+- Un document émis n'est **jamais modifié** : l'en-tête est figé (`snapshot`), signature comprise. On peut seulement l'**annuler**
+  (auteur ou super-admin) : il reste dans le dossier, barré « ANNULÉE ».
 
 ## Données conservées
 

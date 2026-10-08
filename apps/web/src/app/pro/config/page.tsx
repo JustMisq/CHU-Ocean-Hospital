@@ -15,6 +15,10 @@ export default async function GeneralConfigPage() {
         <Field label="Nom de l'établissement" name="hospitalName" defaultValue={s.hospitalName} />
         <Field label="Accroche de la page d'accueil" name="tagline" defaultValue={s.tagline} />
         <Field label="Message de pied de page" name="emergencyNote" defaultValue={s.emergencyNote} />
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Ville (« Los Santos, le … »)" name="hospitalCity" defaultValue={s.hospitalCity} />
+          <Field label="Adresse (en-tête des ordonnances)" name="hospitalAddress" defaultValue={s.hospitalAddress} />
+        </div>
       </section>
 
       <section className="card space-y-4 p-6">

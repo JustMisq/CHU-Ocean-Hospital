@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Droplet, Phone, TriangleAlert } from "lucide-react";
+import { Droplet, FilePlus, Phone, TriangleAlert } from "lucide-react";
 import { prisma } from "@ocean/db";
 import { ActionForm, ConfirmButton, SubmitButton } from "@/components/forms";
 import { StatusBadge } from "@/components/status-badge";
@@ -68,6 +68,11 @@ export default async function AppointmentDetailPage({ params }: PageProps<"/pro/
             <h2 className="font-bold">Patient</h2>
             {canOpenFile && <Link href={`/pro/patients/${character.id}`} className="text-sm font-medium text-ocean-600 hover:underline">Dossier complet →</Link>}
           </div>
+          {canOpenFile && user.can("prescriptions.write") && (
+            <Link href={`/pro/patients/${character.id}/ordonnance?rdv=${appointment.id}`} className="btn-secondary mt-3">
+              <FilePlus className="size-4" /> Rédiger une ordonnance
+            </Link>
+          )}
           <p className="mt-2 flex flex-wrap items-center gap-2 text-lg font-semibold">
             {character.firstName} {character.lastName}
             {character.archivedAt && <span className="rounded-full bg-canvas px-2 py-0.5 text-xs font-medium text-muted">Personnage archivé</span>}
