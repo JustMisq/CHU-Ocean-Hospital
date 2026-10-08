@@ -5,7 +5,6 @@ import { prisma } from "@ocean/db";
 import { ConfirmButton } from "@/components/forms";
 import { StatusBadge } from "@/components/status-badge";
 import { cancelAppointmentAsPatient } from "@/lib/actions/patient";
-import { discordEnabled } from "@/lib/features";
 import { requireUser } from "@/lib/session";
 import { bookingRules, canPatientCancel } from "@/lib/slots";
 import { formatDateTime } from "@/lib/time";
@@ -14,7 +13,7 @@ export const metadata: Metadata = { title: "Mes rendez-vous" };
 
 export default async function PatientAppointmentsPage({ searchParams }: PageProps<"/espace">) {
   const user = await requireUser();
-  const { rdv } = await searchParams;
+  const { rdv, deplace } = await searchParams;
   const now = new Date();
 
   const [appointments, rules] = await Promise.all([
@@ -33,7 +32,12 @@ export default async function PatientAppointmentsPage({ searchParams }: PageProp
     <div className="space-y-8">
       {rdv && upcoming.some((a) => a.id === rdv) && (
         <p className="flex items-center gap-2 rounded-xl bg-emerald-50 p-4 text-sm font-medium text-emerald-800">
-          <CircleCheck className="size-5" /> Rendez-vous confirmé !{discordEnabled && " Vous recevrez un rappel sur Discord."}
+          <CircleCheck className="size-5" /> Rendez-vous confirmé !
+        </p>
+      )}
+      {deplace && upcoming.some((a) => a.id === deplace) && (
+        <p className="flex items-center gap-2 rounded-xl bg-emerald-50 p-4 text-sm font-medium text-emerald-800">
+          <CircleCheck className="size-5" /> Rendez-vous déplacé !
         </p>
       )}
 
@@ -53,13 +57,16 @@ export default async function PatientAppointmentsPage({ searchParams }: PageProp
                 <p className="mt-1 text-sm">{a.reason}</p>
               </div>
               {canPatientCancel(a.start, rules) ? (
-                <form action={cancelAppointmentAsPatient}>
-                  <input type="hidden" name="id" value={a.id} />
-                  <ConfirmButton message="Annuler ce rendez-vous ?">Annuler</ConfirmButton>
-                </form>
+                <div className="flex gap-2">
+                  <Link href={`/medecins/${a.staffId}?deplacer=${a.id}`} className="btn-secondary">Déplacer</Link>
+                  <form action={cancelAppointmentAsPatient}>
+                    <input type="hidden" name="id" value={a.id} />
+                    <ConfirmButton message="Annuler ce rendez-vous ?">Annuler</ConfirmButton>
+                  </form>
+                </div>
               ) : (
                 <p className="text-xs text-muted sm:max-w-44 sm:text-right">
-                  Annulation en ligne impossible à moins de {rules.cancelNoticeHours} h du RDV : prévenez l&apos;hôpital en jeu.
+                  Annulation ou déplacement en ligne impossible à moins de {rules.cancelNoticeHours} h du RDV : prévenez l&apos;hôpital en jeu.
                 </p>
               )}
             </li>

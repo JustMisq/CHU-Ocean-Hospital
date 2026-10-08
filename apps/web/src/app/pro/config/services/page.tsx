@@ -3,7 +3,7 @@ import { prisma, type Service } from "@ocean/db";
 import { ActionForm, SubmitButton } from "@/components/forms";
 import { SERVICE_ICONS, ServiceIcon } from "@/components/service-icon";
 import { deleteService, saveService } from "@/lib/actions/config";
-import { ConfigItem, DeleteButton, RoleIdsField } from "../shared";
+import { ConfigItem, DeleteButton } from "../shared";
 
 export const metadata: Metadata = { title: "Services" };
 
@@ -18,7 +18,6 @@ export default async function ServicesConfigPage() {
             <ConfigItem
               title={<><ServiceIcon name={s.icon} className="size-4 text-ocean-600" /> {s.name} {!s.isPublic && <span className="text-xs font-normal text-muted">(masqué)</span>}</>}
               subtitle={`${s._count.staff} membre(s) · ordre ${s.order}`}
-              roleIds={s.discordRoleIds}
             >
               <ServiceForm service={s} />
               <div className="mt-4 border-t border-line pt-4">
@@ -62,7 +61,6 @@ function ServiceForm({ service }: { service?: Service }) {
           <input name="order" type="number" defaultValue={service?.order ?? 0} className="input" />
         </div>
       </div>
-      <RoleIdsField defaultValue={service?.discordRoleIds} />
       <label className="flex items-center gap-2 text-sm">
         <input type="checkbox" name="isPublic" defaultChecked={service?.isPublic ?? true} className="size-4 accent-ocean-600" />
         Visible sur le site public

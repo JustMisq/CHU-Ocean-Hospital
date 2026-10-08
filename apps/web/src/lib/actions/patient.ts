@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { logAction, prisma, queueBotEvent } from "@ocean/db";
+import { logAction, prisma } from "@ocean/db";
 import type { FormState } from "@/components/forms";
 import { identitySchema, medicalInfoSchema } from "@/lib/characters";
 import { getSettings, requireUser } from "@/lib/session";
@@ -65,9 +65,47 @@ export async function bookAppointment(_: FormState, data: FormData): Promise<For
     });
   if (!appointment) return { error: "Ce créneau vient d'être pris. Choisissez-en un autre." };
 
-  await queueBotEvent("appointment.created", { appointmentId: appointment.id });
   revalidatePath("/espace");
   redirect(`/espace?rdv=${appointment.id}`);
+}
+
+const moveSchema = z.object({ id: z.string().min(1), start: z.iso.datetime() });
+
+/** Déplace son RDV sur un autre créneau libre du même soignant (mêmes délais que l'annulation en ligne). */
+export async function moveAppointmentAsPatient(_: FormState, data: FormData): Promise<FormState> {
+  const user = await requireUser();
+  const parsed = moveSchema.safeParse(Object.fromEntries(data));
+  if (!parsed.success) return { error: "Créneau invalide." };
+  const rules = await bookingRules();
+  const appointment = await prisma.appointment.findFirst({
+    where: { id: parsed.data.id, character: { userId: user.id }, status: { in: ["PENDING", "CONFIRMED"] } },
+    include: { character: { select: { firstName: true, lastName: true } }, staff: { select: { displayName: true } } },
+  });
+  if (!appointment) return { error: "Rendez-vous introuvable." };
+  if (!canPatientCancel(appointment.start, rules)) {
+    return { error: `Trop tard pour déplacer en ligne (moins de ${rules.cancelNoticeHours} h avant) : prévenez l'hôpital en jeu.` };
+  }
+
+  const moved = await prisma
+    .$transaction(
+      async (tx) => {
+        const slot = await findFreeSlot(appointment.staffId, new Date(parsed.data.start), tx, rules);
+        if (!slot) return null;
+        return tx.appointment.update({ where: { id: appointment.id }, data: { start: slot.start, end: slot.end } });
+      },
+      { isolationLevel: "Serializable" },
+    )
+    .catch((e: unknown) => {
+      if (e && typeof e === "object" && "code" in e && e.code === "P2034") return null;
+      throw e;
+    });
+  if (!moved) return { error: "Ce créneau vient d'être pris. Choisissez-en un autre." };
+
+  const { character, staff } = appointment;
+  await logAction(user.id, "appointment.move_patient", `Déplacement par le patient : ${character.firstName} ${character.lastName} (RDV de ${staff.displayName}, ${formatDateTime(appointment.start)} → ${formatDateTime(moved.start)})`);
+  revalidatePath("/espace");
+  revalidatePath("/pro");
+  redirect(`/espace?deplace=${moved.id}`);
 }
 
 export async function cancelAppointmentAsPatient(data: FormData) {
@@ -80,7 +118,6 @@ export async function cancelAppointmentAsPatient(data: FormData) {
   if (!appointment || !canPatientCancel(appointment.start, await bookingRules())) return;
 
   await prisma.appointment.update({ where: { id }, data: { status: "CANCELLED", cancelReason: "Annulé par le patient" } });
-  await queueBotEvent("appointment.cancelled", { appointmentId: id, by: "patient" });
   const { character, staff } = appointment;
   await logAction(user.id, "appointment.cancel_patient", `Annulation par le patient : ${character.firstName} ${character.lastName} (RDV de ${staff.displayName}, ${formatDateTime(appointment.start)})`);
   revalidatePath("/espace");
@@ -138,18 +175,13 @@ export async function deleteCharacter(data: FormData) {
   if (character._count.appointments === 0) {
     await prisma.character.delete({ where: { id: character.id } });
   } else {
-    const upcoming = await prisma.appointment.findMany({
-      where: { characterId: character.id, status: { in: ["PENDING", "CONFIRMED"] }, start: { gt: new Date() } },
-      select: { id: true },
-    });
     await prisma.$transaction([
       prisma.appointment.updateMany({
-        where: { id: { in: upcoming.map((a) => a.id) } },
+        where: { characterId: character.id, status: { in: ["PENDING", "CONFIRMED"] }, start: { gt: new Date() } },
         data: { status: "CANCELLED", cancelReason: "Personnage supprimé par le joueur" },
       }),
       prisma.character.update({ where: { id: character.id }, data: { archivedAt: new Date() } }),
     ]);
-    for (const a of upcoming) await queueBotEvent("appointment.cancelled", { appointmentId: a.id, by: "patient" });
   }
   revalidatePath("/espace");
   revalidatePath("/espace/personnages");

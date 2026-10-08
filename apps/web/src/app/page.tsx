@@ -2,7 +2,6 @@ import Link from "next/link";
 import { ArrowRight, CalendarDays, ClipboardList, Search, ShieldCheck } from "lucide-react";
 import { prisma } from "@ocean/db";
 import { ServiceIcon } from "@/components/service-icon";
-import { discordEnabled } from "@/lib/features";
 import { getSettings } from "@/lib/session";
 import { bookableStaffWhere } from "@/lib/slots";
 
@@ -100,9 +99,7 @@ export default async function HomePage() {
           <div className="flex-1">
             <h2 className="text-lg font-bold">Vous faites partie du personnel ?</h2>
             <p className="text-sm text-muted">
-              {discordEnabled
-                ? "Connectez-vous avec Discord : votre accès pro est attribué automatiquement selon vos rôles sur le serveur."
-                : "Connectez-vous avec l'identifiant fourni par la direction pour accéder à votre agenda et à vos patients."}
+              Connectez-vous avec l&apos;identifiant fourni par la direction pour accéder à votre agenda et à vos patients.
             </p>
           </div>
           <Link href="/pro" className="btn-primary">Espace pro</Link>

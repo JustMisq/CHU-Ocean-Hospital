@@ -3,11 +3,12 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { TriangleAlert } from "lucide-react";
 import { prisma } from "@ocean/db";
+import { AttendanceSummary } from "@/components/attendance-summary";
 import { ActionForm, SubmitButton } from "@/components/forms";
 import { MedicalFields } from "@/components/medical-fields";
 import { StatusBadge } from "@/components/status-badge";
 import { updatePatientInfo } from "@/lib/actions/pro";
-import { canAccessPatient, missingInfo } from "@/lib/characters";
+import { attendanceOf, canAccessPatient, missingInfo } from "@/lib/characters";
 import { requireStaff } from "@/lib/session";
 import { formatDate, formatDateTime } from "@/lib/time";
 
@@ -38,6 +39,7 @@ export default async function PatientFilePage({ params }: PageProps<"/pro/patien
           {patient.archivedAt && <span className="rounded-full bg-canvas px-2 py-0.5 text-xs font-medium text-muted">Personnage archivé</span>}
         </h1>
         <p className="mt-1 text-sm text-muted">Joueur : {patient.user.username} · Dossier créé le {formatDate(patient.createdAt)}</p>
+        <div className="mt-3"><AttendanceSummary attendance={attendanceOf(patient.appointments.map((a) => a.status))} /></div>
         {patient.allergies && (
           <p className="mt-3 flex items-start gap-2 rounded-xl bg-red-50 p-3 text-sm text-red-900">
             <TriangleAlert className="mt-0.5 size-4 shrink-0" /> {patient.allergies}

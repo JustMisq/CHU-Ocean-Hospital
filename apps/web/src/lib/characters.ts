@@ -1,6 +1,6 @@
 import "server-only";
 import { z } from "zod";
-import { prisma, type Character, type Permission } from "@ocean/db";
+import { prisma, type AppointmentStatus, type Character, type Permission } from "@ocean/db";
 
 export const BLOOD_TYPES = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"] as const;
 
@@ -27,6 +27,22 @@ export async function canAccessPatient(user: { staff: { id: string } | null; can
 /** Ce qui manque au dossier pour être exploitable par un soignant. */
 export function missingInfo(c: Pick<Character, "birthDate" | "bloodType">) {
   return [!c.birthDate && "date de naissance", !c.bloodType && "groupe sanguin"].filter((x): x is string => Boolean(x));
+}
+
+/** Assiduité d'un patient : RDV pris (hors annulés), honorés et manqués (« patient absent »). */
+export type Attendance = { total: number; completed: number; noShow: number };
+
+export function attendanceOf(statuses: AppointmentStatus[]): Attendance {
+  return {
+    total: statuses.filter((s) => s !== "CANCELLED").length,
+    completed: statuses.filter((s) => s === "COMPLETED").length,
+    noShow: statuses.filter((s) => s === "NO_SHOW").length,
+  };
+}
+
+export async function getAttendance(characterId: string) {
+  const rows = await prisma.appointment.findMany({ where: { characterId }, select: { status: true } });
+  return attendanceOf(rows.map((r) => r.status));
 }
 
 /** "Pr. Antoine Leclerc" → { firstName: "Antoine", lastName: "Leclerc" } (titres retirés). */

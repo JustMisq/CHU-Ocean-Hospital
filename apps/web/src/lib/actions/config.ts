@@ -2,20 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { ALL_PERMISSIONS, logAction, parseRoleIds, prisma, saveSettings, type Permission } from "@ocean/db";
+import { ALL_PERMISSIONS, logAction, prisma, saveSettings, type Permission } from "@ocean/db";
 import type { FormState } from "@/components/forms";
-import { discordEnabled } from "@/lib/features";
 import { requireStaff } from "@/lib/session";
 
 const requireConfig = () => requireStaff("settings.manage");
-
-/** IDs Discord : nombres de 17 à 20 chiffres, séparés par virgules ou espaces. */
-const roleIdsField = z
-  .string()
-  .default("")
-  .transform((v) => parseRoleIds(v))
-  .refine((ids) => ids.every((id) => /^\d{17,20}$/.test(id)), "ID Discord invalide (17 à 20 chiffres).")
-  .transform((ids) => [...new Set(ids)].join(","));
 
 const checkbox = z.literal("on").optional().transform((v) => v === "on");
 
@@ -49,8 +40,6 @@ const generalSchema = z.object({
   tagline: z.string().trim().min(2).max(120),
   emergencyNote: z.string().trim().max(160).default(""),
   allowSignup: checkbox,
-  discordGuildId: z.string().trim().default("").refine((v) => v === "" || /^\d{17,20}$/.test(v), "ID du serveur Discord invalide."),
-  requireGuildMember: checkbox,
   bookingWindowDays: z.coerce.number().int().min(1, "Fenêtre de réservation : 1 à 60 jours.").max(60),
   minNoticeMinutes: z.coerce.number().int().min(0).max(24 * 60),
   cancelNoticeHours: z.coerce.number().int().min(0, "Délai d'annulation : 0 à 72 heures.").max(72, "Délai d'annulation : 0 à 72 heures."),
@@ -62,12 +51,10 @@ export async function saveGeneralSettings(_: FormState, data: FormData): Promise
   const user = await requireConfig();
   const parsed = generalSchema.safeParse(Object.fromEntries(data));
   if (!parsed.success) return { error: parsed.error.issues[0].message };
-  const { discordGuildId, requireGuildMember, ...v } = parsed.data;
+  const v = parsed.data;
   await saveSettings(prisma, {
     ...v,
     allowSignup: String(v.allowSignup),
-    // Champs absents du formulaire quand Discord est désactivé : on garde les valeurs enregistrées.
-    ...(discordEnabled && { discordGuildId, requireGuildMember: String(requireGuildMember) }),
     bookingWindowDays: String(v.bookingWindowDays),
     minNoticeMinutes: String(v.minNoticeMinutes),
     cancelNoticeHours: String(v.cancelNoticeHours),
@@ -88,7 +75,6 @@ const serviceSchema = z.object({
   icon: z.string().default("stethoscope"),
   order: z.coerce.number().int().default(0),
   isPublic: checkbox,
-  discordRoleIds: roleIdsField,
 });
 
 export async function saveService(_: FormState, data: FormData): Promise<FormState> {
@@ -119,7 +105,6 @@ const specialtySchema = z.object({
   name: z.string().trim().min(2, "Nom requis.").max(60),
   description: z.string().trim().max(300).default(""),
   order: z.coerce.number().int().default(0),
-  discordRoleIds: roleIdsField,
 });
 
 export async function saveSpecialty(_: FormState, data: FormData): Promise<FormState> {
@@ -151,7 +136,6 @@ const gradeSchema = z.object({
   order: z.coerce.number().int().min(0).max(1000),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Couleur invalide.").default("#0a6f98"),
   bookable: checkbox,
-  discordRoleIds: roleIdsField,
 });
 
 export async function saveGrade(_: FormState, data: FormData): Promise<FormState> {

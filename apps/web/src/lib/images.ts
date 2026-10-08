@@ -25,7 +25,7 @@ export async function saveDataUrlImage(dataUrl: string): Promise<{ url: string }
   return { url: PREFIX + image.id };
 }
 
-/** Supprime une image envoyée sur le site (sans effet sur un lien externe comme l'avatar Discord). */
+/** Supprime une image envoyée sur le site (sans effet sur un lien externe). */
 export async function deleteStoredImage(url: string | null | undefined) {
   if (!url?.startsWith(PREFIX)) return;
   await prisma.image.deleteMany({ where: { id: url.slice(PREFIX.length) } });

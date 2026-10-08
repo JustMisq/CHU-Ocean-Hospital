@@ -27,7 +27,7 @@ export async function SiteHeader() {
                 </Link>
               )}
               <Link href="/espace" className="flex items-center gap-2 rounded-full py-1 pl-1 pr-3 hover:bg-ocean-50">
-                <Avatar name={user.username} src={user.avatarUrl} />
+                <Avatar name={user.username} src={user.staff?.photoUrl} />
                 <span className="hidden text-sm font-semibold sm:inline">{user.username}</span>
               </Link>
               <form

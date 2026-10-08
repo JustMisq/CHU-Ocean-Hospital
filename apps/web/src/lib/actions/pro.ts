@@ -2,12 +2,12 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { LOGIN_PATTERN, generateTempPassword, hashPassword, logAction, normalizeLogin, prisma, queueBotEvent } from "@ocean/db";
+import { LOGIN_PATTERN, generateTempPassword, hashPassword, logAction, normalizeLogin, prisma } from "@ocean/db";
 import type { FormState } from "@/components/forms";
 import { canAccessPatient, medicalInfoSchema } from "@/lib/characters";
-import { isDiscordLinked } from "@/lib/features";
 import { deleteStoredImage, saveDataUrlImage } from "@/lib/images";
-import { requireStaff, type CurrentUser } from "@/lib/session";
+import { isPeer, requireStaff, type CurrentUser } from "@/lib/session";
+import { isStaffBookable } from "@/lib/slots";
 import { formatDateTime, parseLocal, shiftDate } from "@/lib/time";
 
 const availabilitySchema = z
@@ -22,7 +22,7 @@ const availabilitySchema = z
 
 export async function addAvailability(_: FormState, data: FormData): Promise<FormState> {
   const user = await requireStaff();
-  if (!user.staff.grade?.bookable && !user.isAdmin) return { error: "Votre grade ne permet pas de recevoir des rendez-vous." };
+  if (!isStaffBookable(user.staff) && !user.isAdmin) return { error: "Vous n'êtes pas autorisé(e) à recevoir des rendez-vous." };
   const parsed = availabilitySchema.safeParse(Object.fromEntries(data));
   if (!parsed.success) return { error: parsed.error.issues[0].message };
   const { date, from, to, slotMinutes, repeatDays } = parsed.data;
@@ -76,7 +76,6 @@ export async function completeAppointment(_: FormState, data: FormData): Promise
   if (appointment.start > new Date()) return { error: "La consultation n'a pas encore commencé." };
 
   await prisma.appointment.update({ where: { id: appointment.id }, data: { status: "COMPLETED", report: parsed.data.report } });
-  await queueBotEvent("appointment.completed", { appointmentId: appointment.id });
   if (isOthers) await logAction(user.id, "appointment.complete", `Clôture : ${label}`);
   revalidatePath(`/pro/rdv/${appointment.id}`);
   revalidatePath("/pro");
@@ -100,11 +99,41 @@ export async function cancelAppointmentAsStaff(_: FormState, data: FormData): Pr
   const reason = String(data.get("reason") ?? "").trim().slice(0, 300) || "Annulé par le soignant";
 
   await prisma.appointment.update({ where: { id: appointment.id }, data: { status: "CANCELLED", cancelReason: reason } });
-  await queueBotEvent("appointment.cancelled", { appointmentId: appointment.id, by: "staff", reason });
   await logAction(user.id, "appointment.cancel", `Annulation : ${label} — « ${reason} »`);
   revalidatePath(`/pro/rdv/${appointment.id}`);
   revalidatePath("/pro");
-  return { ok: "Rendez-vous annulé, le patient sera prévenu." };
+  return { ok: "Rendez-vous annulé : le patient verra le motif dans son espace." };
+}
+
+const moveSchema = z.object({
+  id: z.string(),
+  date: z.iso.date("Date invalide."),
+  time: z.string().regex(/^\d{2}:\d{2}$/, "Heure invalide."),
+});
+
+/** Déplace un RDV à une date libre choisie par le soignant (même durée), hors de ses disponibilités si besoin. */
+export async function moveAppointmentAsStaff(_: FormState, data: FormData): Promise<FormState> {
+  const parsed = moveSchema.safeParse(Object.fromEntries(data));
+  if (!parsed.success) return { error: parsed.error.issues[0].message };
+  const loaded = await loadManageableAppointment(parsed.data.id);
+  if (!loaded) return { error: "Rendez-vous introuvable, déjà clôturé ou non autorisé." };
+  const { appointment, user, label } = loaded;
+
+  const start = parseLocal(parsed.data.date, parsed.data.time);
+  if (start <= new Date()) return { error: "Choisissez une date à venir." };
+  if (start.getTime() === appointment.start.getTime()) return { error: "C'est déjà l'horaire du rendez-vous." };
+  const end = new Date(start.getTime() + (appointment.end.getTime() - appointment.start.getTime()));
+
+  const clash = await prisma.appointment.count({
+    where: { staffId: appointment.staffId, id: { not: appointment.id }, status: { not: "CANCELLED" }, start: { lt: end }, end: { gt: start } },
+  });
+  if (clash) return { error: "Ce soignant a déjà un rendez-vous sur cet horaire." };
+
+  await prisma.appointment.update({ where: { id: appointment.id }, data: { start, end } });
+  await logAction(user.id, "appointment.move", `Déplacement : ${label} → ${formatDateTime(start)}`);
+  revalidatePath(`/pro/rdv/${appointment.id}`);
+  revalidatePath("/pro");
+  return { ok: `Rendez-vous déplacé au ${formatDateTime(start)}. Le patient voit le nouvel horaire dans son espace.` };
 }
 
 /** Un soignant complète le dossier d'un patient (infos médicales, pas l'identité). */
@@ -181,10 +210,15 @@ function canAssignGrade(user: CurrentUser, gradeOrder: number) {
   return user.isAdmin || gradeOrder < (user.staff?.grade?.order ?? -Infinity);
 }
 
+const BOOKABLE_CHOICES = { grade: null, yes: true, no: false } as const;
+
 const staffSchema = z.object({
   id: z.string(),
   gradeId: z.string().optional(),
+  bookable: z.enum(["grade", "yes", "no"]).default("grade").transform((v) => BOOKABLE_CHOICES[v]),
 });
+
+const bookableLabel = (v: boolean | null) => (v === null ? "selon le grade" : v ? "affiché" : "masqué");
 
 export async function updateStaffMember(_: FormState, data: FormData): Promise<FormState> {
   const user = await requireStaff("staff.manage");
@@ -193,27 +227,30 @@ export async function updateStaffMember(_: FormState, data: FormData): Promise<F
 
   const member = await prisma.staffProfile.findUnique({ where: { id: parsed.data.id }, include: { grade: true } });
   if (!member) return { error: "Membre introuvable." };
-  if (member.grade && !canAssignGrade(user, member.grade.order)) {
+  const peer = isPeer(user, member);
+  if (member.grade && !canAssignGrade(user, member.grade.order) && !peer) {
     return { error: "Vous ne pouvez pas modifier un membre de grade égal ou supérieur au vôtre." };
   }
 
   const grade = parsed.data.gradeId ? await prisma.grade.findUnique({ where: { id: parsed.data.gradeId } }) : null;
-  if (grade && !canAssignGrade(user, grade.order)) return { error: "Vous ne pouvez pas attribuer ce grade." };
+  if (peer) {
+    if (grade?.id !== member.gradeId) return { error: "Le grade d'un membre de même grade que vous ne peut pas être modifié ici." };
+  } else if (grade && !canAssignGrade(user, grade.order)) {
+    return { error: "Vous ne pouvez pas attribuer ce grade." };
+  }
 
-  // Seuls les services / spécialités sans lien Discord sont attribués à la main (tous, si Discord est désactivé).
   const [services, specialties] = await Promise.all([prisma.service.findMany(), prisma.specialty.findMany()]);
-  const manual = <T extends { id: string; discordRoleIds: string }>(all: T[], field: string) =>
-    all.filter((x) => !isDiscordLinked(x) && data.getAll(field).includes(x.id)).map((x) => ({ id: x.id }));
-  const linked = <T extends { id: string; discordRoleIds: string }>(all: T[], current: { id: string }[]) =>
-    current.filter((c) => all.some((a) => a.id === c.id && isDiscordLinked(a)));
+  const checked = (all: { id: string }[], field: string) =>
+    all.filter((x) => data.getAll(field).includes(x.id)).map((x) => ({ id: x.id }));
 
   const current = await prisma.staffProfile.findUniqueOrThrow({ where: { id: member.id }, select: { services: true, specialties: true } });
   const updated = await prisma.staffProfile.update({
     where: { id: member.id },
     data: {
       gradeId: grade?.id ?? null,
-      services: { set: [...linked(services, current.services).map((s) => ({ id: s.id })), ...manual(services, "services")] },
-      specialties: { set: [...linked(specialties, current.specialties).map((s) => ({ id: s.id })), ...manual(specialties, "specialties")] },
+      bookable: parsed.data.bookable,
+      services: { set: checked(services, "services") },
+      specialties: { set: checked(specialties, "specialties") },
     },
     select: { services: { select: { name: true } }, specialties: { select: { name: true } } },
   });
@@ -221,6 +258,7 @@ export async function updateStaffMember(_: FormState, data: FormData): Promise<F
   const names = (xs: { name: string }[]) => xs.map((x) => x.name).sort().join(", ") || "aucun";
   const changes = [
     member.gradeId !== (grade?.id ?? null) && `grade ${member.grade?.name ?? "aucun"} → ${grade?.name ?? "retiré du personnel"}`,
+    member.bookable !== parsed.data.bookable && `annuaire & RDV : ${bookableLabel(parsed.data.bookable)}`,
     names(current.services) !== names(updated.services) && `services : ${names(updated.services)}`,
     names(current.specialties) !== names(updated.specialties) && `spécialités : ${names(updated.specialties)}`,
   ].filter(Boolean);
@@ -229,13 +267,11 @@ export async function updateStaffMember(_: FormState, data: FormData): Promise<F
   return { ok: "Enregistré." };
 }
 
-/** Compte par identifiant de connexion, ou par ID Discord. */
+/** Compte par identifiant de connexion. */
 function findAccount(identifier: string) {
-  const value = identifier.trim();
-  return prisma.user.findFirst({
-    where: { OR: [{ login: normalizeLogin(value) }, { discordId: value }] },
-    include: { staff: { include: { grade: true } } },
-  });
+  const login = normalizeLogin(identifier);
+  if (!login) return null;
+  return prisma.user.findUnique({ where: { login }, include: { staff: { include: { grade: true } } } });
 }
 
 /** On ne gère que les comptes de grade strictement inférieur au sien (les patients sont toujours gérables). */

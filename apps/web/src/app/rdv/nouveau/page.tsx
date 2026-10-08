@@ -1,15 +1,15 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { CalendarDays, Clock } from "lucide-react";
+import { CalendarDays, Clock, TriangleAlert } from "lucide-react";
 import { prisma } from "@ocean/db";
 import { Avatar } from "@/components/avatar";
 import { ActionForm, SubmitButton } from "@/components/forms";
-import { bookAppointment } from "@/lib/actions/patient";
+import { bookAppointment, moveAppointmentAsPatient } from "@/lib/actions/patient";
 import { ensureCharacter } from "@/lib/characters";
 import { requireUser } from "@/lib/session";
-import { bookableStaffWhere, findFreeSlot } from "@/lib/slots";
-import { formatDay, formatTime } from "@/lib/time";
+import { bookableStaffWhere, bookingRules, findFreeSlot } from "@/lib/slots";
+import { formatDateTime, formatDay, formatTime } from "@/lib/time";
 
 export const metadata: Metadata = { title: "Confirmer le rendez-vous" };
 
@@ -17,26 +17,47 @@ export default async function NewAppointmentPage({ searchParams }: PageProps<"/r
   const params = await searchParams;
   const staffId = typeof params.soignant === "string" ? params.soignant : "";
   const startIso = typeof params.debut === "string" ? params.debut : "";
-  const here = `/rdv/nouveau?soignant=${staffId}&debut=${encodeURIComponent(startIso)}`;
+  const moveId = typeof params.deplacer === "string" ? params.deplacer : "";
+  const moveParam = moveId ? `?deplacer=${moveId}` : "";
+  const here = `/rdv/nouveau?soignant=${staffId}&debut=${encodeURIComponent(startIso)}${moveId ? `&deplacer=${moveId}` : ""}`;
 
   const user = await requireUser(here);
   const staff = await prisma.staffProfile.findFirst({
     where: { id: staffId, ...bookableStaffWhere },
-    include: { grade: true, services: { where: { isPublic: true }, orderBy: { order: "asc" } }, user: { select: { avatarUrl: true } } },
+    include: { grade: true, services: { where: { isPublic: true }, orderBy: { order: "asc" } } },
   });
   if (!staff) notFound();
 
-  const slot = await findFreeSlot(staff.id, new Date(startIso));
+  const [slot, rules] = await Promise.all([findFreeSlot(staff.id, new Date(startIso)), bookingRules()]);
   await ensureCharacter(user);
-  const characters = await prisma.character.findMany({ where: { userId: user.id, archivedAt: null }, orderBy: { createdAt: "asc" } });
+  const [characters, moving] = await Promise.all([
+    prisma.character.findMany({ where: { userId: user.id, archivedAt: null }, orderBy: { createdAt: "asc" } }),
+    moveId
+      ? prisma.appointment.findFirst({
+          where: { id: moveId, staffId: staff.id, character: { userId: user.id }, status: { in: ["PENDING", "CONFIRMED"] } },
+          include: { character: true },
+        })
+      : null,
+  ]);
+
+  const noShowWarning = (
+    <p className="flex items-start gap-2 rounded-xl bg-amber-50 p-3 text-sm text-amber-900">
+      <TriangleAlert className="mt-0.5 size-4 shrink-0" />
+      <span>
+        Si vous ne venez pas sans prévenir, le rendez-vous est noté <strong>absent</strong> dans votre dossier. Après plusieurs absences,
+        le praticien peut refuser de vous prendre en rendez-vous. Empêché ? Annulez ou déplacez depuis votre espace, jusqu&apos;à{" "}
+        {rules.cancelNoticeHours} h avant.
+      </span>
+    </p>
+  );
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-10">
-      <Link href={`/medecins/${staff.id}`} className="text-sm font-medium text-ocean-600 hover:underline">← Changer de créneau</Link>
-      <h1 className="mt-3 text-2xl font-bold">Confirmer le rendez-vous</h1>
+      <Link href={`/medecins/${staff.id}${moveParam}`} className="text-sm font-medium text-ocean-600 hover:underline">← Changer de créneau</Link>
+      <h1 className="mt-3 text-2xl font-bold">{moveId ? "Déplacer le rendez-vous" : "Confirmer le rendez-vous"}</h1>
 
       <div className="card mt-6 flex items-center gap-4 p-5">
-        <Avatar name={staff.displayName} src={staff.photoUrl ?? staff.user.avatarUrl} size="md" />
+        <Avatar name={staff.displayName} src={staff.photoUrl} size="md" />
         <div className="flex-1">
           <p className="font-semibold">{staff.displayName}</p>
           <p className="text-sm text-muted">{[staff.grade?.name, ...staff.services.map((s) => s.name)].filter(Boolean).join(" · ")}</p>
@@ -57,8 +78,28 @@ export default async function NewAppointmentPage({ searchParams }: PageProps<"/r
       ) : !slot ? (
         <div className="card mt-4 p-6 text-center">
           <p className="text-muted">Ce créneau n&apos;est plus disponible.</p>
-          <Link href={`/medecins/${staff.id}`} className="btn-primary mt-4">Voir les autres créneaux</Link>
+          <Link href={`/medecins/${staff.id}${moveParam}`} className="btn-primary mt-4">Voir les autres créneaux</Link>
         </div>
+      ) : moveId && !moving ? (
+        <div className="card mt-4 p-6 text-center">
+          <p className="text-muted">Ce rendez-vous n&apos;existe plus ou ne peut plus être déplacé.</p>
+          <Link href="/espace" className="btn-primary mt-4">Mes rendez-vous</Link>
+        </div>
+      ) : moving ? (
+        <ActionForm action={moveAppointmentAsPatient} className="card mt-4 space-y-5 p-6">
+          <input type="hidden" name="id" value={moving.id} />
+          <input type="hidden" name="start" value={slot.start.toISOString()} />
+          <div className="text-sm">
+            <p className="text-muted">Pour {moving.character.firstName} {moving.character.lastName} — {moving.reason}</p>
+            <p className="mt-2">
+              <span className="text-muted line-through">{formatDateTime(moving.start)}</span>
+              {" → "}
+              <strong>{formatDateTime(slot.start)}</strong>
+            </p>
+          </div>
+          {noShowWarning}
+          <SubmitButton className="btn-primary w-full py-3" pendingText="Déplacement…">Confirmer le déplacement</SubmitButton>
+        </ActionForm>
       ) : (
         <ActionForm action={bookAppointment} className="card mt-4 space-y-5 p-6">
           <input type="hidden" name="staffId" value={staff.id} />
@@ -95,6 +136,7 @@ export default async function NewAppointmentPage({ searchParams }: PageProps<"/r
             <textarea id="reason" name="reason" rows={3} required minLength={3} maxLength={500} className="input" placeholder="Ex : douleur à l'épaule suite à une chute, visite médicale pour le permis…" />
           </div>
 
+          {noShowWarning}
           <SubmitButton className="btn-primary w-full py-3" pendingText="Réservation…">Confirmer le rendez-vous</SubmitButton>
         </ActionForm>
       )}

@@ -4,9 +4,6 @@ import { redirect } from "next/navigation";
 import { ALL_PERMISSIONS, loadSettings, parsePermissions, prisma, type Permission } from "@ocean/db";
 import { auth } from "@/auth";
 
-/** IDs Discord des super-admins (si Discord est activé). Sinon : `npm run admin`. */
-const adminDiscordIds = () => (process.env.ADMIN_DISCORD_IDS ?? "").split(/[\s,]+/).filter(Boolean);
-
 export const getSettings = cache(() => loadSettings(prisma));
 
 /** Utilisateur connecté, relu en base à chaque requête (grade et permissions à jour). */
@@ -20,7 +17,8 @@ export const getCurrentUser = cache(async () => {
   });
   if (!user) return null;
 
-  const isAdmin = user.isSuperAdmin || (user.discordId !== null && adminDiscordIds().includes(user.discordId));
+  /** Super-admin : créé avec `npm run admin`. */
+  const isAdmin = user.isSuperAdmin;
   const grade = user.staff?.grade ?? null;
   const permissions: Permission[] = isAdmin ? ALL_PERMISSIONS : grade ? parsePermissions(grade.permissions) : [];
   /** Accès à l'espace pro : avoir un grade (ou être super-admin). */
@@ -30,6 +28,11 @@ export const getCurrentUser = cache(async () => {
 });
 
 export type CurrentUser = NonNullable<Awaited<ReturnType<typeof getCurrentUser>>>;
+
+/** Membre de même grade (soi compris) : modifiable avec `staff.manage_peers`, mais pas son grade. */
+export function isPeer(user: CurrentUser, member: { grade: { order: number } | null }) {
+  return !user.isAdmin && user.can("staff.manage_peers") && member.grade !== null && member.grade.order === user.staff?.grade?.order;
+}
 
 export async function requireUser(callbackUrl = "/espace") {
   const user = await getCurrentUser();

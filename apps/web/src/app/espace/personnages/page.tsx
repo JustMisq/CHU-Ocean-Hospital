@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import { Droplet, Pencil, Phone, Trash } from "lucide-react";
 import { prisma } from "@ocean/db";
+import { AttendanceSummary } from "@/components/attendance-summary";
 import { ActionForm, ConfirmButton, SubmitButton } from "@/components/forms";
 import { MedicalFields } from "@/components/medical-fields";
 import { createCharacter, deleteCharacter, updateCharacter } from "@/lib/actions/patient";
-import { missingInfo } from "@/lib/characters";
+import { attendanceOf, missingInfo } from "@/lib/characters";
 import { requireUser } from "@/lib/session";
 import { formatDate } from "@/lib/time";
 
@@ -13,7 +14,11 @@ export const metadata: Metadata = { title: "Mes personnages" };
 export default async function CharactersPage({ searchParams }: PageProps<"/espace/personnages">) {
   const user = await requireUser("/espace/personnages");
   const { retour } = await searchParams;
-  const characters = await prisma.character.findMany({ where: { userId: user.id, archivedAt: null }, orderBy: { createdAt: "asc" } });
+  const characters = await prisma.character.findMany({
+    where: { userId: user.id, archivedAt: null },
+    include: { appointments: { select: { status: true } } },
+    orderBy: { createdAt: "asc" },
+  });
 
   return (
     <div className="grid gap-6 md:grid-cols-[1fr_1fr]">
@@ -32,6 +37,7 @@ export default async function CharactersPage({ searchParams }: PageProps<"/espac
                   </div>
                   {c.allergies && <p className="mt-2 text-xs"><span className="font-semibold">Allergies :</span> {c.allergies}</p>}
                   {missing.length > 0 && <p className="mt-2 text-xs font-medium text-amber-700">À compléter : {missing.join(", ")}</p>}
+                  <div className="mt-2"><AttendanceSummary attendance={attendanceOf(c.appointments.map((a) => a.status))} /></div>
                 </div>
                 <span className="flex items-center gap-1 rounded-full px-2 py-1 text-xs font-medium text-ocean-600 group-open:hidden"><Pencil className="size-3.5" /> Modifier</span>
               </summary>

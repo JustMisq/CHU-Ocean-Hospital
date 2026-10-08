@@ -1,26 +1,10 @@
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
-import Discord from "next-auth/providers/discord";
-import { loadSettings, normalizeLogin, prisma, syncDiscordMember, verifyPassword } from "@ocean/db";
-import { devLoginEnabled, discordEnabled } from "@/lib/features";
+import { normalizeLogin, prisma, verifyPassword } from "@ocean/db";
+import { DEMO_LOGIN_PREFIX, devLoginEnabled } from "@/lib/features";
 
 const MAX_FAILED_LOGINS = 5;
 const LOCK_MINUTES = 15;
-
-type GuildMember = { nick: string | null; roles: string[] };
-
-/** Le membre, `null` s'il n'est pas sur le serveur, `undefined` si Discord n'a pas répondu correctement. */
-async function fetchGuildMember(guildId: string, accessToken: string): Promise<GuildMember | null | undefined> {
-  try {
-    const res = await fetch(`https://discord.com/api/v10/users/@me/guilds/${guildId}/member`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-    if (res.status === 404) return null;
-    return res.ok ? ((await res.json()) as GuildMember) : undefined;
-  } catch {
-    return undefined;
-  }
-}
 
 /** Identifiant + mot de passe, avec blocage temporaire après plusieurs échecs. */
 async function authorizePassword(credentials: Partial<Record<string, unknown>>) {
@@ -55,15 +39,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       credentials: { login: {}, password: {} },
       authorize: authorizePassword,
     }),
-    ...(discordEnabled ? [Discord({ authorization: { params: { scope: "identify guilds.members.read" } } })] : []),
     ...(devLoginEnabled
       ? [
           Credentials({
             id: "dev",
             name: "Compte de démo",
-            credentials: { discordId: {} },
+            credentials: { login: {} },
             async authorize(credentials) {
-              const user = await prisma.user.findUnique({ where: { discordId: String(credentials.discordId) } });
+              const login = String(credentials.login ?? "");
+              if (!login.startsWith(DEMO_LOGIN_PREFIX)) return null;
+              const user = await prisma.user.findUnique({ where: { login } });
               return user ? { id: user.id, name: user.username } : null;
             },
           }),
@@ -71,32 +56,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       : []),
   ],
   callbacks: {
-    async signIn({ account, profile }) {
-      if (account?.provider !== "discord" || !profile || !account.access_token) return true;
-
-      const settings = await loadSettings(prisma);
-      const guildId = settings.discordGuildId || process.env.DISCORD_GUILD_ID || "";
-      const member = guildId ? await fetchGuildMember(guildId, account.access_token) : undefined;
-      if (member === null && settings.requireGuildMember === "true") return "/connexion?erreur=serveur";
-      if (member === undefined && guildId && settings.requireGuildMember === "true") return "/connexion?erreur=discord";
-
-      const discordId = String(profile.id);
-      await syncDiscordMember(prisma, {
-        discordId,
-        username: member?.nick || (profile.global_name as string | null) || String(profile.username),
-        avatarUrl: profile.avatar ? `https://cdn.discordapp.com/avatars/${discordId}/${profile.avatar}.png` : null,
-        // Absent du serveur → aucun rôle ; réponse Discord inconnue → on ne touche pas aux rôles.
-        roles: member === undefined ? null : (member?.roles ?? []),
-      });
-      return true;
-    },
-    async jwt({ token, account, profile, user }) {
-      if (account?.provider === "discord" && profile) {
-        const dbUser = await prisma.user.findUnique({ where: { discordId: String(profile.id) } });
-        if (dbUser) token.uid = dbUser.id;
-      } else if ((account?.provider === "password" || account?.provider === "dev") && user?.id) {
-        token.uid = user.id;
-      }
+    jwt({ token, account, user }) {
+      if (account && user?.id) token.uid = user.id;
       return token;
     },
     session({ session, token }) {

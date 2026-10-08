@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { prisma, type Specialty } from "@ocean/db";
 import { ActionForm, SubmitButton } from "@/components/forms";
 import { deleteSpecialty, saveSpecialty } from "@/lib/actions/config";
-import { ConfigItem, DeleteButton, RoleIdsField } from "../shared";
+import { ConfigItem, DeleteButton } from "../shared";
 
 export const metadata: Metadata = { title: "Spécialités" };
 
@@ -18,7 +18,7 @@ export default async function SpecialtiesConfigPage() {
         <ul className="space-y-2">
           {specialties.map((s) => (
             <li key={s.id}>
-              <ConfigItem title={s.name} subtitle={`${s._count.staff} membre(s) · ordre ${s.order}`} roleIds={s.discordRoleIds}>
+              <ConfigItem title={s.name} subtitle={`${s._count.staff} membre(s) · ordre ${s.order}`}>
                 <SpecialtyForm specialty={s} />
                 <div className="mt-4 border-t border-line pt-4">
                   <DeleteButton action={deleteSpecialty} id={s.id} message={`Supprimer la spécialité « ${s.name} » ?`} />
@@ -56,7 +56,6 @@ function SpecialtyForm({ specialty }: { specialty?: Specialty }) {
         <label className="label">Description</label>
         <textarea name="description" rows={2} maxLength={300} defaultValue={specialty?.description} className="input" />
       </div>
-      <RoleIdsField defaultValue={specialty?.discordRoleIds} />
       <SubmitButton>{specialty ? "Enregistrer" : "Créer la spécialité"}</SubmitButton>
     </ActionForm>
   );

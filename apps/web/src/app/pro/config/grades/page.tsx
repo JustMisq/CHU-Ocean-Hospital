@@ -3,7 +3,7 @@ import { PERMISSIONS, parsePermissions, prisma, type Grade } from "@ocean/db";
 import { ActionForm, SubmitButton } from "@/components/forms";
 import { GradeBadge } from "@/components/grade-badge";
 import { deleteGrade, saveGrade } from "@/lib/actions/config";
-import { ConfigItem, DeleteButton, RoleIdsField } from "../shared";
+import { ConfigItem, DeleteButton } from "../shared";
 
 export const metadata: Metadata = { title: "Grades" };
 
@@ -23,7 +23,6 @@ export default async function GradesConfigPage() {
               <ConfigItem
                 title={<GradeBadge grade={g} />}
                 subtitle={`Ordre ${g.order} · ${g._count.staff} membre(s) · ${parsePermissions(g.permissions).length} permission(s)${g.bookable ? "" : " · non réservable"}`}
-                roleIds={g.discordRoleIds}
               >
                 <GradeForm grade={g} />
                 <div className="mt-4 border-t border-line pt-4">
@@ -62,10 +61,9 @@ function GradeForm({ grade }: { grade?: Grade }) {
           <input name="color" type="color" defaultValue={grade?.color ?? "#0a6f98"} className="h-[42px] w-full cursor-pointer rounded-xl border border-line bg-white p-1" />
         </div>
       </div>
-      <RoleIdsField defaultValue={grade?.discordRoleIds} />
       <label className="flex items-center gap-2 text-sm">
         <input type="checkbox" name="bookable" defaultChecked={grade?.bookable ?? true} className="size-4 accent-ocean-600" />
-        Peut recevoir des rendez-vous (disponibilités + annuaire)
+        Peut recevoir des rendez-vous (disponibilités + annuaire) — modifiable par membre dans Personnel
       </label>
       <fieldset>
         <legend className="label">Permissions</legend>

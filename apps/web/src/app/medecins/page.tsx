@@ -30,7 +30,6 @@ export default async function DoctorsPage({ searchParams }: PageProps<"/medecins
         grade: true,
         services: { where: { isPublic: true }, orderBy: { order: "asc" } },
         specialties: { orderBy: { order: "asc" } },
-        user: { select: { avatarUrl: true } },
       },
       orderBy: [{ grade: { order: "desc" } }, { displayName: "asc" }],
     }),
@@ -68,7 +67,7 @@ export default async function DoctorsPage({ searchParams }: PageProps<"/medecins
           return (
             <li key={s.id}>
               <Link href={`/medecins/${s.id}`} className="card flex items-center gap-4 p-4 transition hover:border-ocean-300 hover:shadow-md">
-                <Avatar name={s.displayName} src={s.photoUrl ?? s.user.avatarUrl} size="md" />
+                <Avatar name={s.displayName} src={s.photoUrl} size="md" />
                 <div className="min-w-0 flex-1">
                   <p className="flex flex-wrap items-center gap-2 font-semibold">{s.displayName} <GradeBadge grade={s.grade} /></p>
                   <p className="truncate text-sm text-muted">

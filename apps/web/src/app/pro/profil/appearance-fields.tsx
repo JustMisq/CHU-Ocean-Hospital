@@ -41,11 +41,10 @@ async function processImage(file: File, kind: Kind): Promise<string> {
 }
 
 /** Photo + bannière par glisser-déposer, avec aperçu de la fiche en direct. */
-export function AppearanceFields({ name, photoUrl, bannerUrl, discordAvatar }: {
+export function AppearanceFields({ name, photoUrl, bannerUrl }: {
   name: string;
   photoUrl: string | null;
   bannerUrl: string | null;
-  discordAvatar: string | null;
 }) {
   const [photo, setPhoto] = useState<Value>("");
   const [banner, setBanner] = useState<Value>("");
@@ -57,7 +56,7 @@ export function AppearanceFields({ name, photoUrl, bannerUrl, discordAvatar }: {
       <div className="overflow-hidden rounded-xl border border-line">
         <Banner src={preview(banner, bannerUrl)} className="h-28" />
         <div className="px-4 pb-4">
-          <Avatar name={name} src={preview(photo, photoUrl) ?? discordAvatar} size="lg" className="-mt-10 ring-4 ring-white" />
+          <Avatar name={name} src={preview(photo, photoUrl)} size="lg" className="-mt-10 ring-4 ring-white" />
         </div>
       </div>
 
@@ -67,11 +66,11 @@ export function AppearanceFields({ name, photoUrl, bannerUrl, discordAvatar }: {
         <DropZone
           kind="photo"
           label="Photo"
-          hint={discordAvatar ? "Carrée, recadrée au centre (sinon : avatar Discord)" : "Carrée, recadrée au centre (sinon : initiales)"}
+          hint="Carrée, recadrée au centre (sinon : initiales)"
           hasImage={Boolean(preview(photo, photoUrl))}
           onImage={(v) => setPhoto(v)}
           onRemove={() => setPhoto(photoUrl ? "remove" : "")}
-          removeLabel={discordAvatar ? "Revenir à l'avatar Discord" : "Retirer la photo"}
+          removeLabel="Retirer la photo"
         />
         <DropZone
           kind="banner"

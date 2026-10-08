@@ -7,9 +7,10 @@ export const PERMISSIONS = {
   "agenda.view_all": "Voir l'agenda de tout l'hôpital",
   "appointments.manage_all": "Gérer les rendez-vous de tous les soignants",
   "staff.manage": "Gérer le personnel (grades, services, spécialités)",
+  "staff.manage_peers": "Gérer aussi son propre profil et ceux de même grade (services, spécialités, annuaire — pas le grade)",
   "stats.view": "Voir les statistiques",
   "audit.view": "Consulter le journal (personnel, configuration, annulations)",
-  "settings.manage": "Configurer le site (services, grades, spécialités, Discord)",
+  "settings.manage": "Configurer le site (services, grades, spécialités)",
 } as const;
 
 export type Permission = keyof typeof PERMISSIONS;
@@ -18,9 +19,4 @@ export const ALL_PERMISSIONS = Object.keys(PERMISSIONS) as Permission[];
 
 export function parsePermissions(value: string): Permission[] {
   return value.split(",").filter((p): p is Permission => p in PERMISSIONS);
-}
-
-/** "123, 456 789" → ["123", "456", "789"] */
-export function parseRoleIds(value: string): string[] {
-  return value.split(/[\s,;]+/).filter(Boolean);
 }

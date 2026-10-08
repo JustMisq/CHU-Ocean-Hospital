@@ -8,10 +8,16 @@ export type Slot = { start: Date; end: Date };
 /** Seul un RDV annulé libère son créneau (un RDV terminé ou manqué l'occupe toujours). */
 const OCCUPYING = { not: "CANCELLED" } as const;
 
-/** Soignants visibles et réservables publiquement. */
+/** Peut recevoir des RDV : choix de la direction pour ce membre, sinon celui de son grade. */
+export function isStaffBookable(staff: { bookable: boolean | null; grade: { bookable: boolean } | null }) {
+  return Boolean(staff.grade) && (staff.bookable ?? staff.grade!.bookable);
+}
+
+/** Soignants visibles et réservables publiquement (même règle que `isStaffBookable`, plus le choix du soignant). */
 export const bookableStaffWhere = {
   isPublic: true,
-  grade: { bookable: true },
+  gradeId: { not: null },
+  OR: [{ bookable: true }, { bookable: null, grade: { bookable: true } }],
 } satisfies Prisma.StaffProfileWhereInput;
 
 export type BookingRules = { windowDays: number; noticeMinutes: number; cancelNoticeHours: number };

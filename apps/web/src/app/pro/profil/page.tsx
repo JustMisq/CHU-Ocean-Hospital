@@ -4,14 +4,13 @@ import { prisma } from "@ocean/db";
 import { ActionForm, SubmitButton } from "@/components/forms";
 import { GradeBadge } from "@/components/grade-badge";
 import { updateOwnProfile } from "@/lib/actions/pro";
-import { discordEnabled } from "@/lib/features";
 import { requireStaff } from "@/lib/session";
 import { AppearanceFields } from "./appearance-fields";
 
 export const metadata: Metadata = { title: "Mon profil" };
 
 export default async function ProfilePage() {
-  const { staff, avatarUrl } = await requireStaff();
+  const { staff } = await requireStaff();
   const links = await prisma.staffProfile.findUniqueOrThrow({
     where: { id: staff.id },
     select: { services: { orderBy: { order: "asc" } }, specialties: { orderBy: { order: "asc" } } },
@@ -28,7 +27,7 @@ export default async function ProfilePage() {
         <p className="flex items-center gap-2"><span className="w-24 text-muted">Grade</span> {staff.grade ? <GradeBadge grade={staff.grade} /> : "—"}</p>
         <p className="flex gap-2"><span className="w-24 shrink-0 text-muted">Services</span> {links.services.map((s) => s.name).join(", ") || "—"}</p>
         <p className="flex gap-2"><span className="w-24 shrink-0 text-muted">Spécialités</span> {links.specialties.map((s) => s.name).join(", ") || "—"}</p>
-        <p className="text-xs text-muted">Attribués par la gestion du personnel{discordEnabled && " ou via vos rôles Discord"}.</p>
+        <p className="text-xs text-muted">Attribués par la gestion du personnel.</p>
       </div>
 
       <ActionForm action={updateOwnProfile} className="card mt-4 space-y-4 p-6">
@@ -40,7 +39,7 @@ export default async function ProfilePage() {
           <label className="label" htmlFor="bio">Présentation</label>
           <textarea id="bio" name="bio" rows={5} maxLength={1000} defaultValue={staff.bio ?? ""} className="input" />
         </div>
-        <AppearanceFields name={staff.displayName} photoUrl={staff.photoUrl} bannerUrl={staff.bannerUrl} discordAvatar={avatarUrl} />
+        <AppearanceFields name={staff.displayName} photoUrl={staff.photoUrl} bannerUrl={staff.bannerUrl} />
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" name="isPublic" defaultChecked={staff.isPublic} className="size-4 accent-ocean-600" />
           Apparaître dans l&apos;annuaire public et être réservable

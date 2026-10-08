@@ -4,7 +4,6 @@ import { PrismaClient } from "../generated/prisma/client";
 export * from "../generated/prisma/client";
 export * from "./permissions";
 export * from "./settings";
-export * from "./discord-sync";
 export * from "./password";
 
 function createClient() {
@@ -20,16 +19,6 @@ const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 export const prisma = globalForPrisma.prisma ?? createClient();
 
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
-
-export type BotEventType =
-  | "appointment.created"
-  | "appointment.cancelled"
-  | "appointment.completed";
-
-/** Ajoute un événement à la file lue par le bot Discord. */
-export function queueBotEvent(type: BotEventType, payload: Record<string, unknown>) {
-  return prisma.botEvent.create({ data: { type, payload: JSON.stringify(payload) } });
-}
 
 /** Trace une action du personnel dans le journal (/pro/journal). */
 export function logAction(actorId: string, action: string, summary: string) {

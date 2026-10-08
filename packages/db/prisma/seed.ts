@@ -28,16 +28,16 @@ const grades = [
   { name: "Chef de service", order: 70, color: "#0a6f98", permissions: "patients.history,agenda.view_all,appointments.manage_all,staff.manage,stats.view,audit.view" },
   { name: "Médecin", order: 50, color: "#0a6f98", permissions: "patients.history,agenda.view_all" },
   { name: "Interne", order: 30, color: "#138cb8", permissions: "patients.history" },
-  { name: "Ambulancier", order: 20, color: "#dc2626", permissions: "patients.history" },
+  { name: "Ambulancier", order: 20, color: "#dc2626", permissions: "patients.history", bookable: false },
   { name: "Stagiaire", order: 10, color: "#64748b", permissions: "", bookable: false },
 ];
 
-// Comptes de démo (discordId factices) utilisables avec la connexion « dev ».
+// Comptes de démo (sans mot de passe) utilisables avec la connexion « dev ».
 const demoStaff = [
-  { discordId: "dev-direction", username: "Dr. Morgan Hale", grade: "Directeur", services: ["medecine-generale"], specialties: [], bio: "Directeur de l'Ocean Hospital." },
-  { discordId: "dev-doctor", username: "Dr. Léa Vasquez", grade: "Médecin", services: ["chirurgie", "urgences"], specialties: ["traumatologie"], bio: "Spécialisée en traumatologie balistique." },
-  { discordId: "dev-psy", username: "Dr. Samuel Okafor", grade: "Médecin", services: ["psychologie"], specialties: ["psychiatrie"], bio: "Accompagnement post-traumatique." },
-  { discordId: "dev-ems", username: "Jordan Reyes", grade: "Ambulancier", services: ["urgences"], specialties: [], bio: null },
+  { login: "demo-direction", username: "Dr. Morgan Hale", grade: "Directeur", services: ["medecine-generale"], specialties: [], bio: "Directeur de l'Ocean Hospital." },
+  { login: "demo-doctor", username: "Dr. Léa Vasquez", grade: "Médecin", services: ["chirurgie", "urgences"], specialties: ["traumatologie"], bio: "Spécialisée en traumatologie balistique." },
+  { login: "demo-psy", username: "Dr. Samuel Okafor", grade: "Médecin", services: ["psychologie"], specialties: ["psychiatrie"], bio: "Accompagnement post-traumatique." },
+  { login: "demo-ems", username: "Jordan Reyes", grade: "Ambulancier", services: ["urgences"], specialties: [], bio: null },
 ];
 
 async function main() {
@@ -54,9 +54,9 @@ async function main() {
   for (const s of demoStaff) {
     const grade = await prisma.grade.findFirstOrThrow({ where: { name: s.grade } });
     const user = await prisma.user.upsert({
-      where: { discordId: s.discordId },
+      where: { login: s.login },
       update: {},
-      create: { discordId: s.discordId, username: s.username },
+      create: { login: s.login, username: s.username },
     });
     const links = {
       services: { set: s.services.map((slug) => ({ slug })) },
@@ -86,9 +86,9 @@ async function main() {
   }
 
   const patient = await prisma.user.upsert({
-    where: { discordId: "dev-patient" },
+    where: { login: "demo-patient" },
     update: {},
-    create: { discordId: "dev-patient", username: "Citoyen Test" },
+    create: { login: "demo-patient", username: "Citoyen Test" },
   });
   if ((await prisma.character.count({ where: { userId: patient.id } })) === 0) {
     await prisma.character.create({

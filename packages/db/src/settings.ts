@@ -7,8 +7,6 @@ export const SETTING_DEFAULTS = {
   emergencyNote: "En cas d'urgence en jeu, contactez le 911.",
   /** Les citoyens peuvent créer leur compte eux-mêmes sur /inscription. */
   allowSignup: "true",
-  discordGuildId: "",
-  requireGuildMember: "false",
   bookingWindowDays: "14",
   minNoticeMinutes: "15",
   /** En dessous de ce délai avant le RDV, le patient ne peut plus annuler en ligne. */

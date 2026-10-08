@@ -2,11 +2,11 @@
 
 Site de prise de rendez-vous (style Doctolib) pour l'hôpital d'un serveur GTA RP.
 Ce n'est pas un MDT : la prise de service et le terrain restent en jeu. Le site gère les RDV, le suivi patient et l'organisation de l'hôpital.
-Il fonctionne seul (comptes identifiant + mot de passe) ; Discord est une option qui se branche plus tard.
+Il fonctionne seul, sans bot ni lien avec Discord : comptes identifiant + mot de passe, tout se gère sur le site.
 
 ```
 apps/web      Site Next.js 16 (public, espace patient, espace pro, configuration)
-packages/db   Schéma Prisma 7 + client + logique partagée (permissions, réglages, mots de passe, synchro Discord)
+packages/db   Schéma Prisma 7 + client + logique partagée (permissions, réglages, mots de passe)
 ```
 
 ## Démarrer en local
@@ -52,27 +52,13 @@ ou soignant ayant déjà eu ce patient en RDV). Chaque modification par un soign
 
 Mots de passe hachés avec scrypt. Compte bloqué 15 min après 5 échecs de connexion.
 
-## Discord (optionnel)
+Avoir un grade = accès à l'espace pro. Pas de grade = patient. Grades, services et spécialités s'attribuent dans **Personnel**.
 
-Désactivé tant que `AUTH_DISCORD_ID` / `AUTH_DISCORD_SECRET` sont vides : le bouton Discord, les champs « IDs de rôles » et la synchro sont alors masqués
-(les IDs déjà saisis sont conservés). Pour l'activer :
+Apparaître dans l'annuaire public et recevoir des RDV : réglé par grade (case « réservable »), et modifiable par membre dans
+**Personnel** (selon le grade / toujours / jamais) — ex : un ambulancier n'est pas dans l'annuaire.
+Le soignant peut en plus se masquer lui-même depuis **Mon profil**.
 
-1. Discord Developer Portal → New Application → **OAuth2** : redirect `http://localhost:3000/api/auth/callback/discord`,
-   puis Client ID / Secret dans `AUTH_DISCORD_ID` / `AUTH_DISCORD_SECRET`, et redémarrer le site.
-2. Optionnel : ton ID Discord dans `ADMIN_DISCORD_IDS` pour être super-admin via Discord.
-3. Renseigner l'ID du serveur et les IDs de rôles dans la configuration.
-
-À chaque connexion Discord (et plus tard via un bot), `syncDiscordMember` (`packages/db/src/discord-sync.ts`) :
-
-- donne au membre le **grade le plus haut** parmi ceux liés à ses rôles Discord ;
-- lui donne **tous** les services et spécialités liés à ses rôles ;
-- retire ce qui est lié à un rôle qu'il n'a plus ;
-- **ne touche pas** aux éléments sans ID Discord, qui s'attribuent à la main dans **Personnel** ;
-- **ne touche à rien** si Discord ne répond pas (panne, rate-limit) : seuls le pseudo et l'avatar sont mis à jour.
-
-Avoir un grade = accès à l'espace pro. Pas de grade = patient.
-
-Photo et bannière d'un soignant : envoyées depuis **Mon profil** (glisser-déposer), stockées dans la base. Sans photo : avatar Discord s'il existe, sinon initiales.
+Photo et bannière d'un soignant : envoyées depuis **Mon profil** (glisser-déposer), stockées dans la base. Sans photo : initiales.
 
 ## Permissions (cochées par grade)
 
@@ -82,9 +68,17 @@ Photo et bannière d'un soignant : envoyées depuis **Mon profil** (glisser-dép
 | `agenda.view_all` | Voir l'agenda de tout l'hôpital |
 | `appointments.manage_all` | Clôturer / annuler les RDV des autres soignants |
 | `staff.manage` | Page Personnel (uniquement les grades **inférieurs** au sien) |
+| `staff.manage_peers` | En plus de `staff.manage` : modifier son propre profil et ceux de **même grade** (services, spécialités, annuaire — jamais le grade). Pour la co-direction. |
 | `stats.view` | Page Statistiques |
 | `audit.view` | Page Journal (changements de grade, annulations, configuration) |
 | `settings.manage` | Page Configuration |
+
+## Rendez-vous
+
+- **Déplacer** : le patient choisit un autre créneau libre du même soignant depuis son espace (mêmes délais que l'annulation en ligne) ;
+  le soignant (ou `appointments.manage_all`) peut fixer librement une nouvelle date depuis la fiche du RDV. Tracé dans le journal.
+- **Absences** : un RDV marqué « Patient absent » compte dans le dossier. Le nombre de RDV, d'honorés et d'absences s'affiche
+  sur le dossier patient, la fiche du RDV et dans « Mes personnages ». Un avertissement est affiché au patient avant de réserver.
 
 ## Données conservées
 
@@ -107,9 +101,3 @@ Lancées automatiquement par GitHub Actions (`.github/workflows/ci.yml`) à chaq
 2. Copier cette `DATABASE_URL` dans `packages/db/.env` et `apps/web/.env.local`, puis `npm run db:push` (et `npm run db:seed` si besoin).
 3. Vercel : variables de `.env.example`. **Ne pas mettre `AUTH_DEV_LOGIN`** en production (n'importe qui pourrait se connecter en démo).
 4. `npm run admin -- <identifiant> <motdepasse>` (avec la `DATABASE_URL` de production) pour le premier compte.
-5. Si Discord est activé : ajouter `https://<ton-domaine>/api/auth/callback/discord` dans les redirects OAuth2.
-
-## Bot Discord (si un jour il est accepté)
-
-- Synchro en direct des nouveaux membres et des changements de rôles : appeler `syncDiscordMember` sur `guildMemberAdd` / `guildMemberUpdate`.
-- Notifications : lire la table `BotEvent` (`appointment.created|cancelled|completed`), puis marquer `processedAt`.

@@ -9,15 +9,17 @@ import { ServiceIcon } from "@/components/service-icon";
 import { bookableStaffWhere, getFreeSlots } from "@/lib/slots";
 import { formatDay, formatTime } from "@/lib/time";
 
-export default async function DoctorPage({ params }: PageProps<"/medecins/[id]">) {
+export default async function DoctorPage({ params, searchParams }: PageProps<"/medecins/[id]">) {
   const { id } = await params;
+  // Déplacement d'un RDV existant : les créneaux mènent à la confirmation du déplacement.
+  const { deplacer } = await searchParams;
+  const moveId = typeof deplacer === "string" ? deplacer : "";
   const staff = await prisma.staffProfile.findFirst({
     where: { id, ...bookableStaffWhere },
     include: {
       grade: true,
       services: { where: { isPublic: true }, orderBy: { order: "asc" } },
       specialties: { orderBy: { order: "asc" } },
-      user: { select: { avatarUrl: true } },
     },
   });
   if (!staff) notFound();
@@ -29,7 +31,7 @@ export default async function DoctorPage({ params }: PageProps<"/medecins/[id]">
       <aside className="card h-fit overflow-hidden">
         <Banner src={staff.bannerUrl} />
         <div className="px-6 pb-6">
-          <Avatar name={staff.displayName} src={staff.photoUrl ?? staff.user.avatarUrl} size="lg" className="-mt-10 ring-4 ring-white" />
+          <Avatar name={staff.displayName} src={staff.photoUrl} size="lg" className="-mt-10 ring-4 ring-white" />
           <h1 className="mt-3 text-xl font-bold">{staff.displayName}</h1>
           <div className="mt-1"><GradeBadge grade={staff.grade} /></div>
           <div className="mt-5 flex flex-wrap gap-2">
@@ -50,9 +52,9 @@ export default async function DoctorPage({ params }: PageProps<"/medecins/[id]">
 
       <section className="card p-6">
         <h2 className="flex items-center gap-2 text-lg font-bold">
-          <CalendarDays className="size-5 text-ocean-600" /> Prendre rendez-vous
+          <CalendarDays className="size-5 text-ocean-600" /> {moveId ? "Déplacer mon rendez-vous" : "Prendre rendez-vous"}
         </h2>
-        <p className="mt-1 text-sm text-muted">Choisissez un créneau (heure du serveur).</p>
+        <p className="mt-1 text-sm text-muted">{moveId ? "Choisissez le nouveau créneau" : "Choisissez un créneau"} (heure du serveur).</p>
 
         {days.length === 0 ? (
           <p className="mt-6 rounded-xl bg-canvas p-6 text-center text-sm text-muted">
@@ -67,7 +69,7 @@ export default async function DoctorPage({ params }: PageProps<"/medecins/[id]">
                   {slots.map((slot) => (
                     <Link
                       key={slot.start.toISOString()}
-                      href={`/rdv/nouveau?soignant=${staff.id}&debut=${encodeURIComponent(slot.start.toISOString())}`}
+                      href={`/rdv/nouveau?soignant=${staff.id}&debut=${encodeURIComponent(slot.start.toISOString())}${moveId ? `&deplacer=${moveId}` : ""}`}
                       className="rounded-lg bg-ocean-50 px-3 py-2 text-sm font-semibold text-ocean-700 transition hover:bg-ocean-600 hover:text-white"
                     >
                       {formatTime(slot.start)}

@@ -3,12 +3,11 @@ import { ChevronRight, KeyRound, UserPlus, UserRoundCheck } from "lucide-react";
 import type { ReactNode } from "react";
 import { prisma } from "@ocean/db";
 import { Avatar } from "@/components/avatar";
-import { DiscordPill } from "@/components/discord-pill";
 import { ActionForm, SubmitButton } from "@/components/forms";
 import { GradeBadge } from "@/components/grade-badge";
 import { addStaffMember, createStaffAccount, resetAccountPassword, updateStaffMember } from "@/lib/actions/pro";
-import { discordEnabled, isDiscordLinked } from "@/lib/features";
-import { requireStaff } from "@/lib/session";
+import { isPeer, requireStaff } from "@/lib/session";
+import { isStaffBookable } from "@/lib/slots";
 
 export const metadata: Metadata = { title: "Personnel" };
 
@@ -30,12 +29,11 @@ export default async function StaffPage({ searchParams }: PageProps<"/pro/person
   // Grades attribuables : strictement inférieurs au sien (sauf super-admin).
   const myOrder = user.staff.grade?.order ?? -Infinity;
   const assignable = grades.filter((g) => user.isAdmin || g.order < myOrder);
-  const accountLabel = (u: { login: string | null; discordId: string | null }) =>
-    u.login ? `@${u.login}` : u.discordId?.startsWith("dev-") ? "compte de démo" : discordEnabled ? `Discord ${u.discordId}` : "sans identifiant";
+  const accountLabel = (u: { login: string | null }) => (u.login ? `@${u.login}` : "sans identifiant");
   // Recherche par nom, identifiant, grade, service ou spécialité.
   const matches = (s: (typeof staff)[number]) =>
     !q ||
-    [s.displayName, s.user.username, s.user.login, s.user.discordId, s.grade?.name, ...s.services.map((x) => x.name), ...s.specialties.map((x) => x.name)]
+    [s.displayName, s.user.username, s.user.login, s.grade?.name, ...s.services.map((x) => x.name), ...s.specialties.map((x) => x.name)]
       .some((v) => v?.toLowerCase().includes(q));
   const active = staff.filter((s) => s.grade && matches(s));
   const former = staff.filter((s) => !s.grade && matches(s));
@@ -43,11 +41,6 @@ export default async function StaffPage({ searchParams }: PageProps<"/pro/person
   return (
     <div>
       <h1 className="text-2xl font-bold">Personnel</h1>
-      {discordEnabled && (
-        <p className="mt-1 text-sm text-muted">
-          Les éléments marqués <DiscordPill /> suivent automatiquement les rôles Discord à chaque connexion. Les autres s&apos;attribuent ici.
-        </p>
-      )}
 
       <form className="mt-6 flex gap-2">
         <input name="q" defaultValue={query} placeholder="Nom, identifiant, grade, service…" className="input sm:max-w-sm" />
@@ -57,18 +50,19 @@ export default async function StaffPage({ searchParams }: PageProps<"/pro/person
 
       <ul className="mt-3 space-y-2">
         {active.map((s) => {
-          const editable = user.isAdmin || (s.grade?.order ?? -1) < myOrder;
+          const peer = isPeer(user, s);
+          const editable = user.isAdmin || (s.grade?.order ?? -1) < myOrder || peer;
           return (
             <li key={s.id}>
               <details className="card group">
                 <summary className="flex cursor-pointer list-none items-center gap-3 p-4">
-                  <Avatar name={s.displayName} src={s.photoUrl ?? s.user.avatarUrl} />
+                  <Avatar name={s.displayName} src={s.photoUrl} />
                   <div className="min-w-0 flex-1">
                     <p className="flex flex-wrap items-center gap-2 font-semibold">
-                      {s.displayName} <GradeBadge grade={s.grade} /> {s.grade && isDiscordLinked(s.grade) && <DiscordPill />}
+                      {s.displayName} <GradeBadge grade={s.grade} />
                     </p>
                     <p className="truncate text-xs text-muted">
-                      {[...s.services, ...s.specialties].map((x) => x.name).join(" · ") || "Aucun service"} · {accountLabel(s.user)}
+                      {[...s.services, ...s.specialties].map((x) => x.name).join(" · ") || "Aucun service"} · {accountLabel(s.user)}{!isStaffBookable(s) && " · hors annuaire"}
                     </p>
                   </div>
                   <ChevronRight className="size-4 text-muted transition group-open:rotate-90" />
@@ -77,17 +71,31 @@ export default async function StaffPage({ searchParams }: PageProps<"/pro/person
                 {editable ? (
                   <ActionForm action={updateStaffMember} className="space-y-4 border-t border-line p-4">
                     <input type="hidden" name="id" value={s.id} />
+                    {peer ? (
+                      <div>
+                        <input type="hidden" name="gradeId" value={s.gradeId ?? ""} />
+                        <p className="label">Grade</p>
+                        <p className="text-sm text-muted">Même grade que vous : seule une personne de grade supérieur peut le modifier.</p>
+                      </div>
+                    ) : (
+                      <div>
+                        <label className="label">Grade</label>
+                        <select name="gradeId" defaultValue={s.gradeId ?? ""} className="input sm:max-w-xs">
+                          <option value="">— Retirer du personnel —</option>
+                          {assignable.map((g) => (
+                            <option key={g.id} value={g.id}>{g.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
                     <div>
-                      <label className="label">Grade</label>
-                      <select name="gradeId" defaultValue={s.gradeId ?? ""} className="input sm:max-w-xs">
-                        <option value="">— Retirer du personnel —</option>
-                        {assignable.map((g) => (
-                          <option key={g.id} value={g.id}>{g.name}{isDiscordLinked(g) ? " (Discord)" : ""}</option>
-                        ))}
+                      <label className="label">Annuaire public & prise de RDV</label>
+                      <select name="bookable" defaultValue={s.bookable === null ? "grade" : s.bookable ? "yes" : "no"} className="input sm:max-w-xs">
+                        <option value="grade">Selon le grade ({s.grade?.bookable ? "affiché" : "masqué"})</option>
+                        <option value="yes">Toujours affiché</option>
+                        <option value="no">Jamais affiché</option>
                       </select>
-                      {s.grade && isDiscordLinked(s.grade) && (
-                        <p className="mt-1 text-xs text-muted">Grade issu de Discord : il sera réappliqué à la prochaine connexion tant que le rôle est présent.</p>
-                      )}
+                      <p className="mt-1 text-xs text-muted">Ex : un ambulancier n&apos;apparaît pas dans « Trouver un soignant » et ne publie pas de disponibilités.</p>
                     </div>
                     <CheckboxGroup label="Services" name="services" items={services} selected={s.services.map((x) => x.id)} />
                     <CheckboxGroup label="Spécialités" name="specialties" items={specialties} selected={s.specialties.map((x) => x.id)} />
@@ -119,7 +127,7 @@ export default async function StaffPage({ searchParams }: PageProps<"/pro/person
 
         <AccountCard icon={<UserRoundCheck className="size-5" />} title="Promouvoir un compte existant" text="Pour un citoyen déjà inscrit sur le site, qui rejoint l'hôpital : il garde son compte et ses personnages.">
           <ActionForm action={addStaffMember} className="flex flex-col gap-2 sm:flex-row" resetOnSuccess>
-            <input name="identifier" required placeholder={discordEnabled ? "Identifiant ou ID Discord" : "Identifiant du compte"} className="input" />
+            <input name="identifier" required autoCapitalize="none" placeholder="Identifiant du compte" className="input" />
             <GradeSelect grades={assignable} />
             <SubmitButton className="btn-primary shrink-0">Ajouter</SubmitButton>
           </ActionForm>
@@ -167,7 +175,7 @@ function GradeSelect({ grades }: { grades: { id: string; name: string }[] }) {
 function CheckboxGroup({ label, name, items, selected }: {
   label: string;
   name: string;
-  items: { id: string; name: string; discordRoleIds: string }[];
+  items: { id: string; name: string }[];
   selected: string[];
 }) {
   if (items.length === 0) return null;
@@ -175,20 +183,15 @@ function CheckboxGroup({ label, name, items, selected }: {
     <fieldset>
       <legend className="label">{label}</legend>
       <div className="flex flex-wrap gap-2">
-        {items.map((item) => {
-          const isLinked = isDiscordLinked(item);
-          return (
-            <label
-              key={item.id}
-              title={isLinked ? "Géré par un rôle Discord" : undefined}
-              className={`flex items-center gap-2 rounded-xl border border-line px-3 py-1.5 text-sm has-checked:border-ocean-400 has-checked:bg-ocean-50 ${isLinked ? "opacity-70" : "cursor-pointer"}`}
-            >
-              <input type="checkbox" name={name} value={item.id} defaultChecked={selected.includes(item.id)} disabled={isLinked} className="accent-ocean-600" />
-              {item.name}
-              {isLinked && <DiscordPill />}
-            </label>
-          );
-        })}
+        {items.map((item) => (
+          <label
+            key={item.id}
+            className="flex cursor-pointer items-center gap-2 rounded-xl border border-line px-3 py-1.5 text-sm has-checked:border-ocean-400 has-checked:bg-ocean-50"
+          >
+            <input type="checkbox" name={name} value={item.id} defaultChecked={selected.includes(item.id)} className="accent-ocean-600" />
+            {item.name}
+          </label>
+        ))}
       </div>
     </fieldset>
   );

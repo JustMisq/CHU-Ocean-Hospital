@@ -4,10 +4,11 @@ import { Droplet, Phone, TriangleAlert } from "lucide-react";
 import { prisma } from "@ocean/db";
 import { ActionForm, ConfirmButton, SubmitButton } from "@/components/forms";
 import { StatusBadge } from "@/components/status-badge";
-import { cancelAppointmentAsStaff, completeAppointment, markNoShow } from "@/lib/actions/pro";
-import { missingInfo } from "@/lib/characters";
+import { AttendanceSummary } from "@/components/attendance-summary";
+import { cancelAppointmentAsStaff, completeAppointment, markNoShow, moveAppointmentAsStaff } from "@/lib/actions/pro";
+import { getAttendance, missingInfo } from "@/lib/characters";
 import { requireStaff } from "@/lib/session";
-import { formatDate, formatDateTime, formatTime } from "@/lib/time";
+import { dayKey, formatDate, formatDateTime, formatTime } from "@/lib/time";
 
 export default async function AppointmentDetailPage({ params }: PageProps<"/pro/rdv/[id]">) {
   const { id } = await params;
@@ -29,6 +30,7 @@ export default async function AppointmentDetailPage({ params }: PageProps<"/pro/
   // Le soignant du RDV a accès au dossier de son patient, même sans la permission « dossiers patients ».
   const canOpenFile = isMine || canSeeHistory;
   const missing = canOpenFile ? missingInfo(character) : [];
+  const attendance = await getAttendance(character.id);
 
   // Dossier : consultations précédentes du personnage à l'hôpital.
   const history = canSeeHistory
@@ -73,6 +75,7 @@ export default async function AppointmentDetailPage({ params }: PageProps<"/pro/
           <p className="text-sm text-muted">
             {character.birthDate ? `Né(e) le ${formatDate(character.birthDate)}` : "Date de naissance inconnue"} · Joueur : {character.user.username}
           </p>
+          <div className="mt-2"><AttendanceSummary attendance={attendance} /></div>
           {missing.length > 0 && (
             <p className="mt-2 text-sm text-amber-700">
               Dossier incomplet ({missing.join(", ")}) : demandez-les au patient et{" "}
@@ -121,6 +124,17 @@ export default async function AppointmentDetailPage({ params }: PageProps<"/pro/
                   Le compte rendu pourra être rédigé à partir de {formatTime(appointment.start)}, le {formatDate(appointment.start)}.
                 </p>
               )}
+
+              <ActionForm action={moveAppointmentAsStaff} className="mt-6 space-y-2 border-t border-line pt-5">
+                <input type="hidden" name="id" value={appointment.id} />
+                <p className="text-sm font-semibold">Déplacer le rendez-vous</p>
+                <div className="flex flex-wrap gap-2">
+                  <input name="date" type="date" required defaultValue={dayKey(appointment.start)} className="input w-auto" />
+                  <input name="time" type="time" required defaultValue={formatTime(appointment.start)} className="input w-auto" />
+                  <SubmitButton className="btn-secondary" pendingText="Déplacement…">Déplacer</SubmitButton>
+                </div>
+                <p className="text-xs text-muted">Même durée ({Math.round((appointment.end.getTime() - appointment.start.getTime()) / 60_000)} min), heure du serveur. Prévenez le patient en jeu.</p>
+              </ActionForm>
 
               <div className="mt-6 border-t border-line pt-5">
                 {hasStarted && (
