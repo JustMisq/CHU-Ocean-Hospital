@@ -31,7 +31,7 @@ export default async function NewAppointmentPage({ searchParams }: PageProps<"/r
   const [slot, rules] = await Promise.all([findFreeSlot(staff.id, new Date(startIso)), bookingRules()]);
   await ensureCharacter(user);
   const [characters, moving] = await Promise.all([
-    prisma.character.findMany({ where: { userId: user.id, archivedAt: null }, orderBy: { createdAt: "asc" } }),
+    prisma.character.findMany({ where: { userId: user.id, archivedAt: null, deceasedAt: null }, orderBy: { createdAt: "asc" } }),
     moveId
       ? prisma.appointment.findFirst({
           where: { id: moveId, staffId: staff.id, character: { userId: user.id }, status: { in: ["PENDING", "CONFIRMED"] } },

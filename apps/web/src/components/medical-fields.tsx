@@ -3,6 +3,30 @@ import { BLOOD_TYPES, SEXES } from "@/lib/characters";
 
 const isoDate = (d: Date | null | undefined) => (d ? d.toISOString().slice(0, 10) : "");
 
+/** Ce que le soignant observe quand on ne connaît pas (bien) la personne : dossiers sans compte. */
+export function ObservationFields({ character }: { character?: Partial<Character> }) {
+  return (
+    <>
+      <div>
+        <label className="label" htmlFor="apparentAge">Âge apparent</label>
+        <input id="apparentAge" name="apparentAge" maxLength={30} defaultValue={character?.apparentAge ?? ""} placeholder="Ex : 30-35 ans" className="input sm:max-w-48" />
+      </div>
+      <div>
+        <label className="label" htmlFor="description">Signes distinctifs / circonstances</label>
+        <textarea
+          id="description"
+          name="description"
+          rows={2}
+          maxLength={600}
+          defaultValue={character?.description ?? ""}
+          placeholder="Ex : tatouage serpent avant-bras gauche, veste rouge ; retrouvé inconscient Grove Street"
+          className="input"
+        />
+      </div>
+    </>
+  );
+}
+
 /** Infos complémentaires d'un dossier (formulaire patient et formulaire soignant). */
 export function MedicalFields({ character, idPrefix = "" }: { character?: Partial<Character>; idPrefix?: string }) {
   const id = (name: string) => `${idPrefix}${name}`;

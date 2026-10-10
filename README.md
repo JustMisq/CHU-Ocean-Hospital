@@ -65,7 +65,9 @@ Photo et bannière d'un soignant : envoyées depuis **Mon profil** (glisser-dép
 | Permission | Effet |
 |---|---|
 | `patients.history` | Page Patients : tous les dossiers (historique, infos médicales modifiables) |
-| `prescriptions.write` | Rédiger ordonnances, prescriptions d'examens et certificats (patients dont on a le dossier) |
+| `documents.view_all` | Zone Documents : voir les documents de tout l'hôpital (sinon seulement les siens) |
+| `documents.revoke_all` | Annuler les documents rédigés par d'autres soignants |
+| `doc.read.<TYPE>` / `doc.write.<TYPE>` | Par type de document (ordonnance, arrêt de travail, décès…) : **Aucun / Lecture / Rédaction**, réglé dans le tableau « Documents » du grade. La rédaction inclut la lecture ; un soignant voit toujours ce qu'il a rédigé, un patient toujours ses documents. |
 | `agenda.view_all` | Voir l'agenda de tout l'hôpital |
 | `appointments.manage_all` | Clôturer / annuler les RDV des autres soignants |
 | `staff.manage` | Page Personnel (uniquement les grades **inférieurs** au sien) |
@@ -81,19 +83,67 @@ Photo et bannière d'un soignant : envoyées depuis **Mon profil** (glisser-dép
 - **Absences** : un RDV marqué « Patient absent » compte dans le dossier. Le nombre de RDV, d'honorés et d'absences s'affiche
   sur le dossier patient, la fiche du RDV et dans « Mes personnages ». Un avertissement est affiché au patient avant de réserver.
 
-## Ordonnances & certificats
+## Documents
 
-Depuis le dossier patient ou la fiche d'un RDV (permission `prescriptions.write`) : **Ordonnance**, **Prescription d'examens**
-ou **Certificat médical**, générés en PDF (`/api/ordonnances/<id>`, `?dl=1` pour télécharger) et rattachés au dossier.
-Le patient les retrouve dans **Mon espace → Mes ordonnances**.
+Zone **Documents** de l'espace pro (droits par type de document, voir Permissions) : on choisit le type, puis le patient, puis on rédige.
+Aussi accessible depuis le dossier patient et la fiche d'un RDV. PDF : `/api/documents/<id>` (`?dl=1` pour télécharger).
+Le patient retrouve ses documents dans **Mon espace → Mes documents**.
 
-- **Par service** (Configuration → Services) : code de numérotation (`KINE` → `KINE-202609-0001`) et chef de service affiché en marge.
+Types : ordonnance, prescription d'examens, certificat médical, arrêt de travail, certificat de décès (marque le dossier
+« décédé », plus de prise de RDV), refus de soins (décharge signée), refus de signer la décharge (attestation devant témoin).
+Tout ce qui définit un type (champs, numérotation, validité) est dans `apps/web/src/lib/document-types.ts`, son texte imprimé
+dans `apps/web/src/lib/document-pdf.tsx` ; un nouveau type = une valeur dans l'enum `DocumentKind` + ces deux fichiers.
+
+- **Patient sans compte** : dans l'assistant, « Créer un dossier sans compte » (nom, naissance…). Le dossier se **rattache** plus
+  tard au compte du joueur depuis le dossier patient (`patients.history`) : comme nouveau personnage, ou **fusionné** avec le
+  personnage qu'il a déjà créé (RDV et documents regroupés).
+- **Par service** (Configuration → Services) : code de numérotation (`KINE` → `KINE-202609-0001` ; sinon préfixe du type :
+  `AT-…`, `DC-…`) et chef de service affiché en marge.
 - **Par soignant** (Mon profil) : titre imprimé (« Masseur-kinésithérapeute D.E. ») et signature dessinée, apposée sur le cachet.
 - **Hôpital** (Configuration → Général) : ville et adresse imprimées.
-- Le patient reçoit un n° (`PAT-AAAAMM-NNNN`, code-barres) à sa première ordonnance.
+- Le patient reçoit un n° (`PAT-AAAAMM-NNNN`, code-barres) à son premier document.
 - Un document émis n'est **jamais modifié** : l'en-tête est figé (`snapshot`), signature comprise. On peut seulement l'**annuler**
   (auteur ou super-admin) : il reste dans le dossier, barré « ANNULÉE ».
+- Rédiger un document pour un patient donne accès à son dossier (comme l'avoir eu en RDV).
+- **Patient non identifié** : nom laissé vide → « INCONNU X-0001 » ; on note l'âge apparent et les signes distinctifs.
 
+## Imagerie (radio, scanner, IRM)
+
+Type de document **Compte rendu d'imagerie** (zone Documents). Tout le corps est couvert, région par région :
+**tête et cou**, **membres supérieurs**, **thorax**, **abdomen et bassin**, **membres inférieurs** (sur la silhouette) et **rachis
+entier** (bouton sous la silhouette).
+
+- **Carte du corps** : silhouette → région → segment → structure → partie (ex : membre inférieur › genou › plateau tibial latéral ;
+  thorax › cage thoracique › côtes droites › 6e côte droite ; tête › encéphale › lobe temporal). Survol en rouge, clic pour zoomer,
+  molette et glisser comme une carte, fil d'Ariane.
+- **Les 3 examens sont différents** : ce qu'on peut sélectionner, les lésions proposées, la technique (incidences / injection /
+  séquences) et le rendu. Fenêtres et séquences selon la région : scanner parties molles, osseux, pulmonaire, cérébral ;
+  IRM T1, T2, fat-sat, gadolinium, et pour le cerveau FLAIR, diffusion, T2*.
+- **La carte est l'image de l'examen** : cliché en radio (poumons noirs, gaz digestif, os), reconstruction au scanner, coupe IRM
+  selon la séquence. Bouton « Atlas » pour l'illustration anatomique (chargée seulement à la demande).
+- **Calques** : os, muscles, tendons et ligaments, système nerveux, vaisseaux, organes — ensemble ou un seul (double-clic) ;
+  ceux que l'examen ne voit pas sont grisés.
+- **Coupes axiales** (scanner, IRM) qu'on fait défiler, avec la ligne de coupe sur la carte. Les lésions y sont dessinées selon leur
+  aspect réel (hématome extradural en lentille, sous-dural en croissant, AVC clair en diffusion, pneumothorax, hémopéritoine…).
+- **Régions médianes** (tête, thorax, abdomen, rachis) : le côté se précise lésion par lésion (« du lobe temporal droit »).
+- **Classifications** proposées selon la structure : Garden (col du fémur), Schatzker (plateau tibial), Danis-Weber (malléole),
+  Le Fort (maxillaire), AO Spine (vertèbres), Young-Burgess (bassin), AAST (foie, rate, rein).
+- **Compte rendu** : indication, technique (générée), résultats (générés depuis les lésions), conclusion ; PDF avec planche numérotée.
+
+Code : `apps/web/src/lib/imaging/` — socle commun dans `anatomy.ts` (types, calques, navigation), une région par fichier dans
+`regions/` (structures + coupes), lésions et techniques dans `catalog.ts`, niveaux de gris et lésions en coupe dans `render.ts` —
+et `apps/web/src/components/imaging/`.
+
+**Dessins** (crédits et licences : `apps/web/src/lib/imaging/atlas/source/SOURCES.md`) :
+- os du membre supérieur, du membre inférieur, du thorax et du bassin : planche du squelette de **LadyofHats** (domaine public) ;
+- muscles, nerfs, artères, organes, cerveau, crâne et rachis : **Servier Medical Art** (CC BY 4.0), recalés sur la planche ;
+- silhouette de choix de zone : polygones de **react-body-highlighter** (MIT).
+
+Fichiers générés (locaux uniquement, aucun accès à la base) :
+- `atlas/skeleton-arm.ts`, `atlas/body-zones.ts` : `cd apps/web && npx tsx scripts/build-atlas.mts` ;
+- tout le reste de `atlas/` : `cd apps/web && npx tsx scripts/build-body.mts <dossier des kits Servier décompressés>`. Les kits
+  (fichiers PowerPoint de smart.servier.com, décompressés en dossiers `x-Muscles`, `x-Bones`…) ne sont pas dans le dépôt ;
+  un second argument facultatif donne un dossier d'images de contrôle.
 ## Données conservées
 
 - Un personnage supprimé par un joueur qui a déjà eu des RDV est **archivé**, pas effacé : son dossier reste visible des soignants.

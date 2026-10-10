@@ -1,7 +1,7 @@
 import "server-only";
 import { cache } from "react";
 import { redirect } from "next/navigation";
-import { ALL_PERMISSIONS, loadSettings, parsePermissions, prisma, type Permission } from "@ocean/db";
+import { ALL_PERMISSIONS, DOCUMENT_KINDS, docAccess, loadSettings, parsePermissions, prisma, type DocumentKind, type Permission } from "@ocean/db";
 import { auth } from "@/auth";
 
 export const getSettings = cache(() => loadSettings(prisma));
@@ -24,7 +24,21 @@ export const getCurrentUser = cache(async () => {
   /** Accès à l'espace pro : avoir un grade (ou être super-admin). */
   const isStaff = Boolean(user.staff && (grade || isAdmin));
 
-  return { ...user, isAdmin, isStaff, permissions, can: (p: Permission) => permissions.includes(p) };
+  // Types de documents : rédigeables, et lisibles (la rédaction inclut la lecture).
+  const writableKinds = DOCUMENT_KINDS.filter((k) => docAccess(permissions, k) === "write");
+  const readableKinds = DOCUMENT_KINDS.filter((k) => docAccess(permissions, k) !== null);
+
+  return {
+    ...user,
+    isAdmin,
+    isStaff,
+    permissions,
+    writableKinds,
+    readableKinds,
+    can: (p: Permission) => permissions.includes(p),
+    canWriteDoc: (k: DocumentKind) => writableKinds.includes(k),
+    canReadDoc: (k: DocumentKind) => readableKinds.includes(k),
+  };
 });
 
 export type CurrentUser = NonNullable<Awaited<ReturnType<typeof getCurrentUser>>>;

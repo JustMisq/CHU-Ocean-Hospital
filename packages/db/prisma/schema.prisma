@@ -52,9 +52,10 @@ model User {
 
 /// Personnage RP (= dossier patient). Un compte peut en avoir plusieurs ; le premier est créé avec le compte.
 /// Un personnage qui a des RDV n'est jamais supprimé, seulement archivé (le dossier médical reste).
+/// Sans `userId` : dossier créé par un soignant pour quelqu'un qui n'a pas (encore) de compte, rattaché plus tard.
 model Character {
   id            String    @id @default(cuid())
-  userId        String
+  userId        String?
   firstName     String
   lastName      String
   /// Infos complémentaires facultatives : complétées plus tard par le joueur ou par un soignant.
@@ -64,14 +65,19 @@ model Character {
   allergies     String?
   /// "M", "F" ou "X" (autre).
   sex           String?
-  /// Numéro affiché sur les documents (ex : PAT-202607-6436), attribué à la première ordonnance.
+  /// Numéro affiché sur les documents (ex : PAT-202607-6436), attribué au premier document.
   patientNumber String?   @unique
+  /// Renseigné par un certificat de décès (effacé si le certificat est annulé).
+  deceasedAt    DateTime?
+  /// Patient non identifié (« INCONNU X-0003 ») : ce qu'on observe à la place de l'état civil.
+  apparentAge   String?
+  description   String?
   createdAt     DateTime  @default(now())
   archivedAt    DateTime?
 
-  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  appointments  Appointment[]
-  prescriptions Prescription[]
+  user         User?             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  appointments Appointment[]
+  documents    MedicalDocument[]
 
   @@index([userId])
 }
@@ -91,10 +97,10 @@ model Service {
   headId      String?
 
   // Nom explicite = nom par défaut : la table de liaison existante (_ServiceToStaffProfile) est conservée.
-  staff         StaffProfile[] @relation("ServiceToStaffProfile")
-  head          StaffProfile?  @relation("ServiceHead", fields: [headId], references: [id], onDelete: SetNull)
-  appointments  Appointment[]
-  prescriptions Prescription[]
+  staff        StaffProfile[]    @relation("ServiceToStaffProfile")
+  head         StaffProfile?     @relation("ServiceHead", fields: [headId], references: [id], onDelete: SetNull)
+  appointments Appointment[]
+  documents    MedicalDocument[]
 }
 
 /// Compétence complémentaire (ex : chirurgien, psychiatre, formateur…).
@@ -142,14 +148,14 @@ model StaffProfile {
   signatureUrl String?
   createdAt    DateTime @default(now())
 
-  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  grade          Grade?         @relation(fields: [gradeId], references: [id], onDelete: SetNull)
-  services       Service[]      @relation("ServiceToStaffProfile")
-  headOf         Service[]      @relation("ServiceHead")
+  user           User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  grade          Grade?            @relation(fields: [gradeId], references: [id], onDelete: SetNull)
+  services       Service[]         @relation("ServiceToStaffProfile")
+  headOf         Service[]         @relation("ServiceHead")
   specialties    Specialty[]
   availabilities Availability[]
   appointments   Appointment[]
-  prescriptions  Prescription[]
+  documents      MedicalDocument[]
 }
 
 /// Plage de disponibilité publiée par un soignant, découpée en créneaux de `slotMinutes`.
@@ -182,40 +188,51 @@ model Appointment {
   updatedAt    DateTime          @updatedAt
 
   // Restrict : un RDV (et son compte rendu) ne disparaît jamais par effet de bord.
-  character     Character      @relation(fields: [characterId], references: [id], onDelete: Restrict)
-  staff         StaffProfile   @relation(fields: [staffId], references: [id], onDelete: Restrict)
-  service       Service?       @relation(fields: [serviceId], references: [id], onDelete: SetNull)
-  prescriptions Prescription[]
+  character Character         @relation(fields: [characterId], references: [id], onDelete: Restrict)
+  staff     StaffProfile      @relation(fields: [staffId], references: [id], onDelete: Restrict)
+  service   Service?          @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  documents MedicalDocument[]
 
   @@index([staffId, start])
   @@index([characterId])
 }
 
-enum PrescriptionKind {
+/// Types de documents (libellés, champs et texte imprimé : apps/web/src/lib/document-types.ts).
+enum DocumentKind {
   ORDONNANCE
   EXAMENS
   CERTIFICAT
+  ARRET_TRAVAIL
+  DECES
+  REFUS_SOINS
+  REFUS_SIGNATURE
+  IMAGERIE
+
+  @@map("PrescriptionKind")
 }
 
-/// Ordonnance / prescription d'examens / certificat, rattaché au dossier du patient. Jamais modifié après émission :
-/// `snapshot` fige l'en-tête (patient, soignant, service, signature) pour que le PDF reste identique dans le temps.
-model Prescription {
-  id             String           @id @default(cuid())
-  /// Ex : KINE-202609-0001 (préfixe du service, mois, numéro du mois).
-  number         String           @unique
-  kind           PrescriptionKind @default(ORDONNANCE)
+/// Document médical (ordonnance, certificat, arrêt de travail…), rattaché au dossier du patient. Jamais modifié après
+/// émission : `snapshot` fige l'en-tête (patient, soignant, service, signature) pour que le PDF reste identique dans le temps.
+/// Table historique « Prescription » conservée (@@map) : les documents déjà émis restent en place.
+model MedicalDocument {
+  id             String       @id @default(cuid())
+  /// Ex : KINE-202609-0001 (préfixe du service ou du type, mois, numéro du mois).
+  number         String       @unique
+  kind           DocumentKind @default(ORDONNANCE)
   characterId    String
   staffId        String
   serviceId      String?
   appointmentId  String?
   /// Lignes : [{ name, instructions, quantity }].
-  items          Json             @default("[]")
+  items          Json         @default("[]")
   /// Texte libre (certificat, remarques).
-  body           String           @default("")
-  renewable      Boolean          @default(false)
-  validityMonths Int              @default(3)
+  body           String       @default("")
+  /// Champs propres au type de document (dates d'arrêt, cause du décès, soins refusés…).
+  data           Json         @default("{}")
+  renewable      Boolean      @default(false)
+  validityMonths Int          @default(3)
   snapshot       Json
-  createdAt      DateTime         @default(now())
+  createdAt      DateTime     @default(now())
   revokedAt      DateTime?
   revokedReason  String?
 
@@ -225,6 +242,7 @@ model Prescription {
   appointment Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
 
   @@index([characterId])
+  @@map("Prescription")
 }
 
 /// Image envoyée depuis le site (photo, bannière), déjà redimensionnée par le navigateur.

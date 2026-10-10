@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { TZDate } from "@date-fns/tz";
-import { ALL_PERMISSIONS, prisma } from "../src/index";
+import { ALL_PERMISSIONS, DOCUMENT_KINDS, docPermission, prisma, type DocumentKind } from "../src/index";
 
 const TZ = process.env.NEXT_PUBLIC_TZ ?? "Europe/Paris";
 
@@ -22,13 +22,20 @@ const specialties = [
 ];
 
 const ALL = ALL_PERMISSIONS.join(",");
+/** Droits documents : types rédigés (lecture incluse), puis types seulement lus. */
+const docs = (write: DocumentKind[] | "all", read: DocumentKind[] | "all" = []) => {
+  const w = write === "all" ? DOCUMENT_KINDS : write;
+  const r = (read === "all" ? DOCUMENT_KINDS : read).filter((k) => !w.includes(k));
+  return [...w.map((k) => docPermission("write", k)), ...r.map((k) => docPermission("read", k))].join(",");
+};
 const grades = [
   { name: "Directeur", order: 100, color: "#7c3aed", permissions: ALL },
   { name: "Directeur adjoint", order: 90, color: "#7c3aed", permissions: ALL },
-  { name: "Chef de service", order: 70, color: "#0a6f98", permissions: "patients.history,prescriptions.write,agenda.view_all,appointments.manage_all,staff.manage,stats.view,audit.view" },
-  { name: "Médecin", order: 50, color: "#0a6f98", permissions: "patients.history,prescriptions.write,agenda.view_all" },
-  { name: "Interne", order: 30, color: "#138cb8", permissions: "patients.history,prescriptions.write" },
-  { name: "Ambulancier", order: 20, color: "#dc2626", permissions: "patients.history", bookable: false },
+  { name: "Chef de service", order: 70, color: "#0a6f98", permissions: `patients.history,agenda.view_all,appointments.manage_all,documents.view_all,documents.revoke_all,staff.manage,stats.view,audit.view,${docs("all")}` },
+  { name: "Médecin", order: 50, color: "#0a6f98", permissions: `patients.history,agenda.view_all,documents.view_all,${docs("all")}` },
+  { name: "Interne", order: 30, color: "#138cb8", permissions: `patients.history,${docs(["ORDONNANCE", "EXAMENS", "CERTIFICAT", "ARRET_TRAVAIL"], "all")}` },
+  // Les ambulanciers rédigent ce qui se fait sur intervention, et lisent le reste.
+  { name: "Ambulancier", order: 20, color: "#dc2626", permissions: `patients.history,${docs(["REFUS_SOINS", "REFUS_SIGNATURE"], "all")}`, bookable: false },
   { name: "Stagiaire", order: 10, color: "#64748b", permissions: "", bookable: false },
 ];
 

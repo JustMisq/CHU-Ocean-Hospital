@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { LOGIN_PATTERN, generateTempPassword, hashPassword, logAction, normalizeLogin, prisma } from "@ocean/db";
 import type { FormState } from "@/components/forms";
-import { canAccessPatient, medicalInfoSchema } from "@/lib/characters";
+import { canAccessPatient, identitySchema, medicalInfoSchema, observationSchema } from "@/lib/characters";
 import { deleteStoredImage, saveDataUrlImage } from "@/lib/images";
 import { isPeer, requireStaff, type CurrentUser } from "@/lib/session";
 import { isStaffBookable } from "@/lib/slots";
@@ -145,8 +145,25 @@ export async function updatePatientInfo(_: FormState, data: FormData): Promise<F
   if (!(await canAccessPatient(user, id))) return { error: "Accès au dossier non autorisé." };
 
   const before = await prisma.character.findUniqueOrThrow({ where: { id } });
-  const after = await prisma.character.update({ where: { id }, data: parsed.data });
-  const labels = { birthDate: "date de naissance", sex: "sexe", phone: "téléphone", bloodType: "groupe sanguin", allergies: "allergies" } as const;
+  // Dossier sans compte : le soignant peut aussi corriger l'identité (personne d'autre ne le peut).
+  let identity = {};
+  if (!before.userId) {
+    const parsedIdentity = identitySchema.extend(observationSchema.shape).safeParse(Object.fromEntries(data));
+    if (!parsedIdentity.success) return { error: parsedIdentity.error.issues[0].message };
+    identity = parsedIdentity.data;
+  }
+  const after = await prisma.character.update({ where: { id }, data: { ...parsed.data, ...identity } });
+  const labels = {
+    firstName: "prénom",
+    lastName: "nom",
+    apparentAge: "âge apparent",
+    description: "signes distinctifs",
+    birthDate: "date de naissance",
+    sex: "sexe",
+    phone: "téléphone",
+    bloodType: "groupe sanguin",
+    allergies: "allergies",
+  } as const;
   const changed = (Object.keys(labels) as (keyof typeof labels)[]).filter((k) => String(before[k] ?? "") !== String(after[k] ?? ""));
   if (changed.length) {
     await logAction(user.id, "patient.update", `Dossier de ${after.firstName} ${after.lastName} complété : ${changed.map((k) => labels[k]).join(", ")}`);

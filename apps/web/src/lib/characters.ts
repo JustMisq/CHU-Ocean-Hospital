@@ -14,20 +14,39 @@ export const medicalInfoSchema = z.object({
   allergies: z.string().trim().max(300).optional().transform((v) => v || null),
 });
 
+/** Ce qu'on observe chez un patient non identifié (ou sans compte), à la place de l'état civil. */
+export const observationSchema = z.object({
+  apparentAge: z.string().trim().max(30).optional().transform((v) => v || null),
+  description: z.string().trim().max(600).optional().transform((v) => v || null),
+});
+
+/** Nom de famille des patients non identifiés : « INCONNU X-0003 ». */
+export const UNKNOWN_LAST_NAME = "INCONNU";
+export const isUnidentified = (c: { lastName: string }) => c.lastName === UNKNOWN_LAST_NAME;
+
 export const identitySchema = z.object({
   firstName: z.string().trim().min(1, "Prénom requis.").max(40),
   lastName: z.string().trim().min(1, "Nom requis.").max(40),
 });
 
-/** Dossier patient : permission « dossiers patients », ou soignant ayant déjà eu ce patient en RDV. */
+/**
+ * Dossier patient : permission « dossiers patients », ou soignant ayant déjà eu ce patient en RDV,
+ * ou lui ayant rédigé un document (ex : certificat sur intervention pour quelqu'un sans compte).
+ */
 export async function canAccessPatient(user: { staff: { id: string } | null; can: (p: Permission) => boolean }, characterId: string) {
   if (user.can("patients.history")) return true;
   if (!user.staff) return false;
-  return (await prisma.appointment.count({ where: { characterId, staffId: user.staff.id } })) > 0;
+  const staffId = user.staff.id;
+  const [appointments, documents] = await Promise.all([
+    prisma.appointment.count({ where: { characterId, staffId } }),
+    prisma.medicalDocument.count({ where: { characterId, staffId } }),
+  ]);
+  return appointments + documents > 0;
 }
 
-/** Ce qui manque au dossier pour être exploitable par un soignant. */
-export function missingInfo(c: Pick<Character, "birthDate" | "bloodType">) {
+/** Ce qui manque au dossier pour être exploitable par un soignant (rien à réclamer pour un inconnu). */
+export function missingInfo(c: Pick<Character, "birthDate" | "bloodType"> & { lastName?: string }) {
+  if (c.lastName && isUnidentified({ lastName: c.lastName })) return [];
   return [!c.birthDate && "date de naissance", !c.bloodType && "groupe sanguin"].filter((x): x is string => Boolean(x));
 }
 

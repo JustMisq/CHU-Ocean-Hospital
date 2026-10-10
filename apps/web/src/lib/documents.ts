@@ -1,7 +1,7 @@
 import "server-only";
-import { prisma, type Prisma } from "@ocean/db";
-import { canAccessPatient } from "./characters";
-import type { PrescriptionSnapshot } from "./prescription-types";
+import { prisma, type DocumentKind, type Prisma } from "@ocean/db";
+import { canAccessPatient, isUnidentified } from "./characters";
+import type { DocumentSnapshot } from "./document-types";
 import type { CurrentUser } from "./session";
 import { dayKey } from "./time";
 
@@ -49,7 +49,7 @@ export async function buildSnapshot({ characterId, staffId, serviceId, settings 
   staffId: string;
   serviceId: string | null;
   settings: { hospitalName: string; hospitalCity: string; hospitalAddress: string };
-}): Promise<PrescriptionSnapshot> {
+}): Promise<DocumentSnapshot> {
   const [character, staff, service] = await Promise.all([
     prisma.character.findUniqueOrThrow({ where: { id: characterId } }),
     prisma.staffProfile.findUniqueOrThrow({ where: { id: staffId }, include: { grade: true } }),
@@ -74,29 +74,59 @@ export async function buildSnapshot({ characterId, staffId, serviceId, settings 
       birthDate: character.birthDate?.toISOString() ?? null,
       sex: character.sex,
       number: await ensurePatientNumber(character),
+      apparentAge: character.apparentAge,
+      unidentified: isUnidentified(character),
     },
   };
 }
 
 /**
- * Crée l'ordonnance avec le prochain numéro du mois pour ce préfixe (KINE-202609-0001…).
+ * Crée le document avec le prochain numéro du mois pour ce préfixe (KINE-202609-0001…).
  * Deux créations simultanées peuvent viser le même numéro : la contrainte unique tranche, on réessaie.
  */
-export async function createWithNumber(prefix: string, data: Omit<Prisma.PrescriptionUncheckedCreateInput, "number">) {
+export async function createWithNumber(prefix: string, data: Omit<Prisma.MedicalDocumentUncheckedCreateInput, "number">) {
   const base = `${prefix}-${monthKey(new Date())}-`;
   for (let attempt = 0; attempt < 5; attempt++) {
-    const count = await prisma.prescription.count({ where: { number: { startsWith: base } } });
+    const count = await prisma.medicalDocument.count({ where: { number: { startsWith: base } } });
     try {
-      return await prisma.prescription.create({ data: { ...data, number: base + String(count + 1 + attempt).padStart(4, "0") } });
+      return await prisma.medicalDocument.create({ data: { ...data, number: base + String(count + 1 + attempt).padStart(4, "0") } });
     } catch (e) {
       if (!isUniqueViolation(e)) throw e;
     }
   }
-  throw new Error("Impossible d'attribuer un numéro d'ordonnance.");
+  throw new Error("Impossible d'attribuer un numéro de document.");
 }
 
-/** Le patient (propriétaire du personnage) ou un soignant ayant accès à son dossier. */
-export async function canViewPrescription(user: CurrentUser, prescription: { characterId: string; character: { userId: string } }) {
-  if (prescription.character.userId === user.id) return true;
-  return (user.isStaff || user.isAdmin) && (await canAccessPatient(user, prescription.characterId));
+/**
+ * Le joueur propriétaire du personnage ; ou un soignant qui a accès au dossier ET qui a rédigé le document
+ * ou a le droit de lecture sur ce type de document (réglé par grade).
+ */
+export async function canViewDocument(
+  user: CurrentUser,
+  document: { characterId: string; staffId: string; kind: DocumentKind; character: { userId: string | null } },
+) {
+  if (document.character.userId === user.id) return true;
+  if (!user.isStaff && !user.isAdmin) return false;
+  if (document.staffId !== user.staff?.id && !user.canReadDoc(document.kind)) return false;
+  return canAccessPatient(user, document.characterId);
+}
+
+/** Annuler un document : son auteur, un super-admin, ou la permission « annuler les documents des autres ». */
+export const canRevokeDocument = (user: CurrentUser, document: { staffId: string }) =>
+  document.staffId === user.staff?.id || user.isAdmin || user.can("documents.revoke_all");
+
+/** Champs de recherche d'un dossier : chaque mot dans le prénom, le nom ou le n° patient. */
+export function dossierSearch(q: string): Prisma.CharacterWhereInput {
+  return {
+    AND: q
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((word) => ({
+        OR: [
+          { firstName: { contains: word, mode: "insensitive" } },
+          { lastName: { contains: word, mode: "insensitive" } },
+          { patientNumber: { contains: word, mode: "insensitive" } },
+        ],
+      })),
+  };
 }

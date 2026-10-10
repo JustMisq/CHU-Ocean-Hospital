@@ -68,9 +68,9 @@ export default async function AppointmentDetailPage({ params }: PageProps<"/pro/
             <h2 className="font-bold">Patient</h2>
             {canOpenFile && <Link href={`/pro/patients/${character.id}`} className="text-sm font-medium text-ocean-600 hover:underline">Dossier complet →</Link>}
           </div>
-          {canOpenFile && user.can("prescriptions.write") && (
-            <Link href={`/pro/patients/${character.id}/ordonnance?rdv=${appointment.id}`} className="btn-secondary mt-3">
-              <FilePlus className="size-4" /> Rédiger une ordonnance
+          {canOpenFile && user.writableKinds.length > 0 && (
+            <Link href={`/pro/documents/nouveau?patient=${character.id}&rdv=${appointment.id}`} className="btn-secondary mt-3">
+              <FilePlus className="size-4" /> Rédiger un document
             </Link>
           )}
           <p className="mt-2 flex flex-wrap items-center gap-2 text-lg font-semibold">
@@ -78,7 +78,7 @@ export default async function AppointmentDetailPage({ params }: PageProps<"/pro/
             {character.archivedAt && <span className="rounded-full bg-canvas px-2 py-0.5 text-xs font-medium text-muted">Personnage archivé</span>}
           </p>
           <p className="text-sm text-muted">
-            {character.birthDate ? `Né(e) le ${formatDate(character.birthDate)}` : "Date de naissance inconnue"} · Joueur : {character.user.username}
+            {character.birthDate ? `Né(e) le ${formatDate(character.birthDate)}` : "Date de naissance inconnue"} · {character.user ? `Joueur : ${character.user.username}` : "Sans compte"}
           </p>
           <div className="mt-2"><AttendanceSummary attendance={attendance} /></div>
           {missing.length > 0 && (

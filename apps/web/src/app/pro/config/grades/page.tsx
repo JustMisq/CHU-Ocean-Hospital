@@ -1,11 +1,14 @@
 import type { Metadata } from "next";
-import { PERMISSIONS, parsePermissions, prisma, type Grade } from "@ocean/db";
+import { DOCUMENT_KINDS, PERMISSIONS, docAccess, parsePermissions, prisma, type Grade } from "@ocean/db";
 import { ActionForm, SubmitButton } from "@/components/forms";
 import { GradeBadge } from "@/components/grade-badge";
 import { deleteGrade, saveGrade } from "@/lib/actions/config";
+import { DOCUMENT_TYPES } from "@/lib/document-types";
 import { ConfigItem, DeleteButton } from "../shared";
 
 export const metadata: Metadata = { title: "Grades" };
+
+const DOC_LEVELS: [value: "" | "read" | "write", label: string][] = [["", "Aucun"], ["read", "Lecture"], ["write", "Rédaction"]];
 
 export default async function GradesConfigPage() {
   const grades = await prisma.grade.findMany({ orderBy: { order: "desc" }, include: { _count: { select: { staff: true } } } });
@@ -75,6 +78,36 @@ function GradeForm({ grade }: { grade?: Grade }) {
             </label>
           ))}
         </div>
+      </fieldset>
+      <fieldset>
+        <legend className="label">Documents</legend>
+        <p className="mb-2 text-xs text-muted">
+          Lecture : voir ce type de document dans les dossiers auxquels on a accès. Rédaction : le créer (inclut la lecture).
+          Un soignant voit toujours les documents qu&apos;il a rédigés ; un patient, toujours les siens.
+        </p>
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-xs text-muted">
+              <th className="pb-1 font-medium">Type</th>
+              {DOC_LEVELS.map(([, label]) => <th key={label} className="w-20 pb-1 text-center font-medium">{label}</th>)}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-line">
+            {DOCUMENT_KINDS.map((kind) => {
+              const level = docAccess(current, kind) ?? "";
+              return (
+                <tr key={kind}>
+                  <td className="py-1.5 pr-2">{DOCUMENT_TYPES[kind].label}</td>
+                  {DOC_LEVELS.map(([value, label]) => (
+                    <td key={value} className="text-center">
+                      <input type="radio" name={`doc-${kind}`} value={value} defaultChecked={level === value} aria-label={`${DOCUMENT_TYPES[kind].label} : ${label}`} className="size-4 accent-ocean-600" />
+                    </td>
+                  ))}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </fieldset>
       <SubmitButton>{grade ? "Enregistrer" : "Créer le grade"}</SubmitButton>
     </ActionForm>

@@ -26,6 +26,7 @@ export async function bookAppointment(_: FormState, data: FormData): Promise<For
 
   const character = await prisma.character.findFirst({ where: { id: characterId, userId: user.id, archivedAt: null } });
   if (!character) return { error: "Personnage introuvable." };
+  if (character.deceasedAt) return { error: "Ce personnage est déclaré décédé." };
 
   // Limite configurable pour éviter le spam de réservations.
   const maxUpcoming = Number((await getSettings()).maxUpcomingPerCharacter) || 3;
@@ -166,13 +167,14 @@ export async function deleteCharacter(data: FormData) {
   const user = await requireUser("/espace/personnages");
   const character = await prisma.character.findFirst({
     where: { id: String(data.get("id")), userId: user.id, archivedAt: null },
-    include: { _count: { select: { appointments: true } } },
+    include: { _count: { select: { appointments: true, documents: true } } },
   });
   if (!character) return;
   // On garde toujours au moins un personnage (on le modifie plutôt que de le supprimer).
   if ((await prisma.character.count({ where: { userId: user.id, archivedAt: null } })) <= 1) return;
 
-  if (character._count.appointments === 0) {
+  // Un dossier avec RDV ou documents n'est jamais effacé : archivé, il reste consultable par les soignants.
+  if (character._count.appointments === 0 && character._count.documents === 0) {
     await prisma.character.delete({ where: { id: character.id } });
   } else {
     await prisma.$transaction([

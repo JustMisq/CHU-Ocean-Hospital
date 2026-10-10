@@ -1,8 +1,10 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { ChevronRight } from "lucide-react";
-import { prisma, type Prisma } from "@ocean/db";
+import { prisma } from "@ocean/db";
+import { DossierBadges } from "@/components/dossier-badges";
 import { missingInfo } from "@/lib/characters";
+import { dossierSearch } from "@/lib/documents";
 import { requireStaff } from "@/lib/session";
 import { formatDate } from "@/lib/time";
 
@@ -15,15 +17,9 @@ export default async function PatientsPage({ searchParams }: PageProps<"/pro/pat
   const { q: rawQ } = await searchParams;
   const q = typeof rawQ === "string" ? rawQ.trim() : "";
 
-  // Chaque mot doit se retrouver dans le prénom ou le nom (« tony russo », « russo »…).
-  const where: Prisma.CharacterWhereInput = {
-    AND: q
-      .split(/\s+/)
-      .filter(Boolean)
-      .map((word) => ({ OR: [{ firstName: { contains: word, mode: "insensitive" } }, { lastName: { contains: word, mode: "insensitive" } }] })),
-  };
+  // Chaque mot doit se retrouver dans le prénom, le nom ou le n° patient (« tony russo », « PAT-2026… »).
   const patients = await prisma.character.findMany({
-    where,
+    where: dossierSearch(q),
     include: {
       appointments: { where: { status: "COMPLETED" }, orderBy: { start: "desc" }, take: 1, select: { start: true } },
       _count: { select: { appointments: { where: { status: "COMPLETED" } } } },
@@ -38,7 +34,7 @@ export default async function PatientsPage({ searchParams }: PageProps<"/pro/pat
       <p className="mt-1 text-sm text-muted">Dossiers de tous les personnages : infos médicales et historique des consultations.</p>
 
       <form className="mt-6 flex gap-2">
-        <input name="q" defaultValue={q} placeholder="Prénom, nom…" className="input sm:max-w-sm" />
+        <input name="q" defaultValue={q} placeholder="Prénom, nom, n° patient…" className="input sm:max-w-sm" />
         <button className="btn-secondary">Rechercher</button>
       </form>
 
@@ -51,7 +47,7 @@ export default async function PatientsPage({ searchParams }: PageProps<"/pro/pat
                 <span className="min-w-0 flex-1">
                   <span className="flex flex-wrap items-center gap-2 font-medium">
                     {p.firstName} {p.lastName}
-                    {p.archivedAt && <span className="rounded-full bg-canvas px-2 py-0.5 text-xs font-medium text-muted">Archivé</span>}
+                    <DossierBadges dossier={p} />
                     {missing.length > 0 && <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800">Incomplet</span>}
                   </span>
                   <span className="block text-sm text-muted">

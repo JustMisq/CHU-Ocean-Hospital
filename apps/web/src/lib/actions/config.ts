@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { ALL_PERMISSIONS, logAction, prisma, saveSettings, type Permission } from "@ocean/db";
+import { ALL_PERMISSIONS, DOCUMENT_KINDS, docPermission, logAction, prisma, saveSettings, type Permission } from "@ocean/db";
 import type { FormState } from "@/components/forms";
 import { requireStaff } from "@/lib/session";
 
@@ -153,6 +153,11 @@ export async function saveGrade(_: FormState, data: FormData): Promise<FormState
   if (!parsed.success) return { error: parsed.error.issues[0].message };
   const { id, ...v } = parsed.data;
   const permissions = data.getAll("permissions").filter((p): p is Permission => ALL_PERMISSIONS.includes(p as Permission));
+  // Documents : un choix par type (aucun / lecture / rédaction).
+  for (const kind of DOCUMENT_KINDS) {
+    const level = data.get(`doc-${kind}`);
+    if (level === "read" || level === "write") permissions.push(docPermission(level, kind));
+  }
 
   // Garde-fou : on ne peut pas retirer à son propre grade la permission de configuration.
   if (id && id === user.staff.gradeId && !user.isAdmin && !permissions.includes("settings.manage")) {
@@ -162,7 +167,9 @@ export async function saveGrade(_: FormState, data: FormData): Promise<FormState
   const payload = { ...v, permissions: permissions.join(",") };
   if (id) await prisma.grade.update({ where: { id }, data: payload });
   else await prisma.grade.create({ data: payload });
-  await logAction(user.id, id ? "grade.update" : "grade.create", `Grade ${id ? "modifié" : "créé"} : ${v.name} (${permissions.join(", ") || "aucune permission"})`);
+  const base = permissions.filter((p) => !p.startsWith("doc."));
+  const docs = `documents : ${permissions.filter((p) => p.startsWith("doc.write.")).length} en rédaction, ${permissions.filter((p) => p.startsWith("doc.read.")).length} en lecture`;
+  await logAction(user.id, id ? "grade.update" : "grade.create", `Grade ${id ? "modifié" : "créé"} : ${v.name} (${base.join(", ") || "aucune permission"} ; ${docs})`);
   revalidateAll();
   return { ok: id ? "Grade mis à jour." : "Grade créé." };
 }

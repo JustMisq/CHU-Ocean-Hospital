@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ChartColumn, CalendarDays, ClipboardList, Clock, ScrollText, Settings2, UserRound, Users } from "lucide-react";
+import { ChartColumn, CalendarDays, ClipboardList, Clock, FileText, ScrollText, Settings2, UserRound, Users } from "lucide-react";
 import { GradeBadge } from "@/components/grade-badge";
 import { requireStaff } from "@/lib/session";
 import { isStaffBookable } from "@/lib/slots";
@@ -10,6 +10,7 @@ export default async function ProLayout({ children }: LayoutProps<"/pro">) {
     { href: "/pro", label: "Agenda", icon: CalendarDays, show: true },
     { href: "/pro/disponibilites", label: "Disponibilités", icon: Clock, show: isStaffBookable(user.staff) || user.isAdmin },
     { href: "/pro/patients", label: "Patients", icon: ClipboardList, show: user.can("patients.history") },
+    { href: "/pro/documents", label: "Documents", icon: FileText, show: user.readableKinds.length > 0 },
     { href: "/pro/profil", label: "Mon profil", icon: UserRound, show: true },
     { href: "/pro/personnel", label: "Personnel", icon: Users, show: user.can("staff.manage") },
     { href: "/pro/stats", label: "Statistiques", icon: ChartColumn, show: user.can("stats.view") },
