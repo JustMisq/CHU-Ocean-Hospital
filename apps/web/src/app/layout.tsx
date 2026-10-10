@@ -30,6 +30,12 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
             <p>© {settings.hospitalName} — 2026</p>
             <p>{settings.emergencyNote}</p>
           </div>
+          <p className="border-t border-line py-3 text-center text-xs text-muted">
+            Site réalisé par{" "}
+            <a href="https://github.com/JustMisq" target="_blank" rel="noopener noreferrer" className="font-semibold text-ocean-700 hover:underline">
+              JustMisq
+            </a>
+          </p>
         </footer>
       </body>
     </html>

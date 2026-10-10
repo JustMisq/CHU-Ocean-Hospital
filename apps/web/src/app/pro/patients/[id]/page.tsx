@@ -1,18 +1,20 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { FilePlus, Link2, TriangleAlert } from "lucide-react";
+import { ArrowRightLeft, FilePlus, Inbox, Link2, MapPin, TriangleAlert } from "lucide-react";
 import { normalizeLogin, prisma } from "@ocean/db";
 import { AttendanceSummary } from "@/components/attendance-summary";
 import { DocumentList } from "@/components/document-list";
 import { DossierBadges } from "@/components/dossier-badges";
 import { ActionForm, SubmitButton } from "@/components/forms";
 import { MedicalFields, ObservationFields } from "@/components/medical-fields";
+import { RequestList, requestRowInclude } from "@/components/request-list";
 import { StatusBadge } from "@/components/status-badge";
 import { linkDossier } from "@/lib/actions/documents";
 import { updatePatientInfo } from "@/lib/actions/pro";
 import { attendanceOf, canAccessPatient, missingInfo } from "@/lib/characters";
 import { canRevokeDocument } from "@/lib/documents";
+import { currentServiceOf } from "@/lib/requests";
 import { requireStaff } from "@/lib/session";
 import { formatDate, formatDateTime } from "@/lib/time";
 
@@ -37,6 +39,10 @@ export default async function PatientFilePage({ params, searchParams }: PageProp
     },
   });
   if (!patient) notFound();
+  const [requests, current] = await Promise.all([
+    prisma.serviceRequest.findMany({ where: { characterId: id }, include: requestRowInclude, orderBy: { createdAt: "desc" }, take: 30 }),
+    currentServiceOf(id),
+  ]);
   const missing = missingInfo(patient);
   const withoutAccount = !patient.user;
 
@@ -68,6 +74,13 @@ export default async function PatientFilePage({ params, searchParams }: PageProp
             {patient.description}
           </p>
         )}
+        {current && (
+          <p className="mt-2 flex items-center gap-1.5 text-sm"><MapPin className="size-4 text-ocean-600" /> Actuellement en <strong>{current.name}</strong>{current.since && <span className="text-muted">depuis le {formatDateTime(current.since)}</span>}</p>
+        )}
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Link href={`/pro/demandes/nouvelle?patient=${patient.id}`} className="btn-secondary"><Inbox className="size-4" /> Demande à un service</Link>
+          {!patient.deceasedAt && <Link href={`/pro/demandes/nouvelle?kind=TRANSFERT&patient=${patient.id}`} className="btn-secondary"><ArrowRightLeft className="size-4" /> Transférer</Link>}
+        </div>
         <div className="mt-3"><AttendanceSummary attendance={attendanceOf(patient.appointments.map((a) => a.status))} /></div>
         {patient.allergies && (
           <p className="mt-3 flex items-start gap-2 rounded-xl bg-red-50 p-3 text-sm text-red-900">
@@ -144,6 +157,13 @@ export default async function PatientFilePage({ params, searchParams }: PageProp
         </section>
 
         <section className="space-y-8">
+          {requests.length > 0 && (
+            <div>
+              <h2 className="font-bold">Demandes et transferts ({requests.length})</h2>
+              <div className="mt-3"><RequestList requests={requests} showPatient={false} empty="" /></div>
+            </div>
+          )}
+
           <div>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="font-bold">Documents ({patient.documents.length})</h2>

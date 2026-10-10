@@ -9,6 +9,7 @@ import { UNKNOWN_LAST_NAME, medicalInfoSchema, observationSchema } from "@/lib/c
 import { DOCUMENT_KINDS, DOCUMENT_TYPES, readFields, type DocumentItem } from "@/lib/document-types";
 import { buildSnapshot, canRevokeDocument, createWithNumber } from "@/lib/documents";
 import { parseImaging } from "@/lib/imaging/catalog";
+import { canHandleRequest, notify } from "@/lib/requests";
 import { getSettings, requireStaff } from "@/lib/session";
 import { parseLocal } from "@/lib/time";
 
@@ -102,6 +103,31 @@ export async function createDocument(_: FormState, data: FormData): Promise<Form
 
   const patientName = `${snapshot.patient.firstName} ${snapshot.patient.lastName}`;
   await logAction(user.id, "document.create", `${type.label} ${document.number} pour ${patientName}`);
+
+  // Le joueur est prévenu qu'un document est arrivé dans son dossier.
+  const owner = await prisma.character.findUnique({ where: { id: characterId }, select: { userId: true } });
+  await notify([owner?.userId], { title: `Nouveau document : ${type.label}`, body: `${document.number} — ${user.staff.displayName}`, link: "/espace/documents" }, user.id);
+
+  // Rédigé en réponse à une demande : rattaché à elle, le demandeur est prévenu.
+  const requestId = String(data.get("requestId") ?? "");
+  const request = requestId
+    ? await prisma.serviceRequest.findFirst({
+        where: { id: requestId, characterId, status: { in: ["PENDING", "ACCEPTED"] } },
+        include: { author: { select: { userId: true } } },
+      })
+    : null;
+  if (request && (await canHandleRequest(user, request))) {
+    await prisma.serviceRequest.update({
+      where: { id: request.id },
+      data: { responseDocumentId: document.id, ...(request.status === "PENDING" && { status: "ACCEPTED", assigneeId: user.staff.id, acceptedAt: new Date() }) },
+    });
+    await prisma.requestEvent.create({ data: { requestId: request.id, staffId: user.staff.id, action: "document", message: `${type.label} ${document.number}` } });
+    await notify([request.author.userId], { title: `Document rédigé : ${type.label}`, body: `${document.number} pour ${patientName}`, link: `/pro/demandes/${request.id}`, requestId: request.id }, user.id);
+    revalidatePath(`/pro/demandes/${request.id}`);
+    revalidatePath(`/pro/patients/${characterId}`);
+    redirect(`/pro/demandes/${request.id}`);
+  }
+
   revalidatePath(`/pro/patients/${characterId}`);
   revalidatePath("/pro/documents");
   redirect(`/pro/patients/${characterId}?document=${document.id}`);
@@ -142,10 +168,14 @@ const dossierSchema = z
  */
 export async function createDossier(_: FormState, data: FormData): Promise<FormState> {
   const user = await requireStaff();
-  if (user.writableKinds.length === 0) return { error: "Votre grade ne permet de rédiger aucun document." };
-  const parsed = dossierSchema.safeParse(Object.fromEntries(data));
+  // Depuis l'assistant des demandes, tout soignant peut ouvrir un dossier (transfert d'un inconnu, analyse…).
+  const next = data.get("next") === "demande" ? "demande" : "document";
+  if (next === "document" && user.writableKinds.length === 0) return { error: "Votre grade ne permet de rédiger aucun document." };
+  const fields = Object.fromEntries([...data.entries()].filter(([k]) => !k.startsWith("keep-") && k !== "next"));
+  const parsed = dossierSchema.safeParse(fields);
   if (!parsed.success) return { error: parsed.error.issues[0].message };
-  const kind = String(data.get("kind") ?? "");
+  // Choix déjà faits dans l'assistant (type, service…), repris après la création.
+  const keep = Object.fromEntries([...data.entries()].filter(([k]) => k.startsWith("keep-")).map(([k, v]) => [k.slice(5), String(v)]));
   const { firstName, lastName, ...rest } = parsed.data;
 
   let identity = { firstName, lastName };
@@ -159,8 +189,9 @@ export async function createDossier(_: FormState, data: FormData): Promise<FormS
 
   const dossier = await prisma.character.create({ data: { ...rest, ...identity, userId: null } });
   await logAction(user.id, "dossier.create", `Dossier sans compte créé : ${dossier.firstName} ${dossier.lastName}`);
-  const params = new URLSearchParams({ patient: dossier.id, ...(DOCUMENT_KINDS.includes(kind as DocumentKind) && { type: kind }) });
-  redirect(`/pro/documents/nouveau?${params}`);
+  const params = new URLSearchParams({ ...keep, patient: dossier.id });
+  if (next === "document" && params.has("type") && !DOCUMENT_KINDS.includes(params.get("type") as DocumentKind)) params.delete("type");
+  redirect(`${next === "demande" ? "/pro/demandes/nouvelle" : "/pro/documents/nouveau"}?${params}`);
 }
 
 /**

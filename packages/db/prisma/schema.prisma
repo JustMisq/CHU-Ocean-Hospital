@@ -45,9 +45,10 @@ model User {
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
-  characters Character[]
-  staff      StaffProfile?
-  auditLogs  AuditLog[]
+  characters    Character[]
+  staff         StaffProfile?
+  auditLogs     AuditLog[]
+  notifications Notification[]
 }
 
 /// Personnage RP (= dossier patient). Un compte peut en avoir plusieurs ; le premier est créé avec le compte.
@@ -78,6 +79,7 @@ model Character {
   user         User?             @relation(fields: [userId], references: [id], onDelete: Cascade)
   appointments Appointment[]
   documents    MedicalDocument[]
+  requests     ServiceRequest[]
 
   @@index([userId])
 }
@@ -98,9 +100,12 @@ model Service {
 
   // Nom explicite = nom par défaut : la table de liaison existante (_ServiceToStaffProfile) est conservée.
   staff        StaffProfile[]    @relation("ServiceToStaffProfile")
-  head         StaffProfile?     @relation("ServiceHead", fields: [headId], references: [id], onDelete: SetNull)
-  appointments Appointment[]
-  documents    MedicalDocument[]
+  head             StaffProfile?     @relation("ServiceHead", fields: [headId], references: [id], onDelete: SetNull)
+  appointments     Appointment[]
+  documents        MedicalDocument[]
+  requestTypes     RequestType[]
+  sentRequests     ServiceRequest[]  @relation("RequestFrom")
+  receivedRequests ServiceRequest[]  @relation("RequestTo")
 }
 
 /// Compétence complémentaire (ex : chirurgien, psychiatre, formateur…).
@@ -153,9 +158,13 @@ model StaffProfile {
   services       Service[]         @relation("ServiceToStaffProfile")
   headOf         Service[]         @relation("ServiceHead")
   specialties    Specialty[]
-  availabilities Availability[]
-  appointments   Appointment[]
-  documents      MedicalDocument[]
+  availabilities   Availability[]
+  appointments     Appointment[]
+  documents        MedicalDocument[]
+  authoredRequests ServiceRequest[] @relation("RequestAuthor")
+  directRequests   ServiceRequest[] @relation("RequestRecipient")
+  assignedRequests ServiceRequest[] @relation("RequestAssignee")
+  requestEvents    RequestEvent[]
 }
 
 /// Plage de disponibilité publiée par un soignant, découpée en créneaux de `slotMinutes`.
@@ -236,13 +245,154 @@ model MedicalDocument {
   revokedAt      DateTime?
   revokedReason  String?
 
-  character   Character    @relation(fields: [characterId], references: [id], onDelete: Restrict)
-  staff       StaffProfile @relation(fields: [staffId], references: [id], onDelete: Restrict)
-  service     Service?     @relation(fields: [serviceId], references: [id], onDelete: SetNull)
-  appointment Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  character   Character        @relation(fields: [characterId], references: [id], onDelete: Restrict)
+  staff       StaffProfile     @relation(fields: [staffId], references: [id], onDelete: Restrict)
+  service     Service?         @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  appointment Appointment?     @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  /// Demandes auxquelles ce document répond (compte rendu d'imagerie, résultats…).
+  answers     ServiceRequest[] @relation("RequestDocument")
 
   @@index([characterId])
   @@map("Prescription")
+}
+
+// ─── Demandes entre services, transferts, notifications ──────────────────────
+
+enum RequestKind {
+  /// Demande à un service (analyse, avis, intervention…).
+  DEMANDE
+  /// Transfert du patient vers un service, qui le prend en charge.
+  TRANSFERT
+}
+
+enum RequestStatus {
+  /// Envoyée, en attente du service.
+  PENDING
+  /// Acceptée / prise en charge (fin du parcours pour un transfert).
+  ACCEPTED
+  REFUSED
+  /// Traitée : réponse rendue.
+  COMPLETED
+  /// Retirée par le demandeur.
+  CANCELLED
+}
+
+enum RequestPriority {
+  NORMAL
+  URGENT
+  /// Urgence vitale.
+  VITAL
+}
+
+/// Type de demande qu'un service accepte, configurable par la direction ou le chef de service.
+/// Les formulaires sont des listes de champs : [{ name, label, type, required, options, half, hint }].
+model RequestType {
+  id                String        @id @default(cuid())
+  serviceId         String
+  name              String
+  description       String        @default("")
+  order             Int           @default(0)
+  active            Boolean       @default(true)
+  /// Rempli par le demandeur.
+  fields            Json          @default("[]")
+  /// Rempli par le service pour accepter (réquisition, consultation…). Vide : acceptation en un clic.
+  acceptFields      Json          @default("[]")
+  /// Rempli par le service en clôturant (résultats, avis…).
+  responseFields    Json          @default("[]")
+  /// Documents que le patient doit déjà avoir (types séparés par des virgules, ex : DECES).
+  requiredDocuments String        @default("")
+  /// Demandes déjà traitées pour ce patient (ids de types séparés par des virgules), ex : consultation d'anesthésie.
+  requiredTypes     String        @default("")
+  /// Document attendu en réponse (ex : IMAGERIE) : rédigé depuis la demande et rattaché à elle.
+  responseDocument  DocumentKind?
+  createdAt         DateTime      @default(now())
+
+  service  Service          @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  requests ServiceRequest[]
+
+  @@index([serviceId])
+}
+
+/// Demande d'un soignant à un service, ou transfert de patient. Le type et ses formulaires sont figés à l'envoi.
+model ServiceRequest {
+  id                 String          @id @default(cuid())
+  /// Ex : DEM-202610-0001 / TRF-202610-0001.
+  number             String          @unique
+  kind               RequestKind     @default(DEMANDE)
+  typeId             String?
+  /// Nom et formulaires du type au moment de l'envoi.
+  typeSnapshot       Json            @default("{}")
+  characterId        String
+  authorId           String
+  fromServiceId      String?
+  toServiceId        String
+  /// Destinataire précis (facultatif) ; sinon tout le service.
+  recipientId        String?
+  /// Soignant qui a pris la demande en charge.
+  assigneeId         String?
+  priority           RequestPriority @default(NORMAL)
+  status             RequestStatus   @default(PENDING)
+  /// Motif / message du demandeur.
+  message            String          @default("")
+  data               Json            @default("{}")
+  acceptData         Json            @default("{}")
+  responseData       Json            @default("{}")
+  response           String          @default("")
+  refusalReason      String?
+  responseDocumentId String?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+  acceptedAt         DateTime?
+  closedAt           DateTime?
+
+  type             RequestType?     @relation(fields: [typeId], references: [id], onDelete: SetNull)
+  character        Character        @relation(fields: [characterId], references: [id], onDelete: Restrict)
+  author           StaffProfile     @relation("RequestAuthor", fields: [authorId], references: [id], onDelete: Restrict)
+  fromService      Service?         @relation("RequestFrom", fields: [fromServiceId], references: [id], onDelete: SetNull)
+  toService        Service          @relation("RequestTo", fields: [toServiceId], references: [id], onDelete: Restrict)
+  recipient        StaffProfile?    @relation("RequestRecipient", fields: [recipientId], references: [id], onDelete: SetNull)
+  assignee         StaffProfile?    @relation("RequestAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  responseDocument MedicalDocument? @relation("RequestDocument", fields: [responseDocumentId], references: [id], onDelete: SetNull)
+  events           RequestEvent[]
+  notifications    Notification[]
+
+  @@index([toServiceId, status])
+  @@index([characterId])
+  @@index([authorId])
+}
+
+/// Fil d'une demande : envoi, acceptation, messages échangés, clôture.
+model RequestEvent {
+  id        String   @id @default(cuid())
+  requestId String
+  staffId   String?
+  /// create | accept | refuse | complete | cancel | comment | document | assign
+  action    String
+  message   String   @default("")
+  createdAt DateTime @default(now())
+
+  request ServiceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  staff   StaffProfile?  @relation(fields: [staffId], references: [id], onDelete: SetNull)
+
+  @@index([requestId, createdAt])
+}
+
+/// Notification affichée sur le site (cloche de l'en-tête), pour soignants comme pour patients.
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  title     String
+  body      String    @default("")
+  /// Page à ouvrir.
+  link      String
+  requestId String?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user    User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  request ServiceRequest? @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt])
 }
 
 /// Image envoyée depuis le site (photo, bannière), déjà redimensionnée par le navigateur.

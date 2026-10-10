@@ -6,6 +6,7 @@ import { LOGIN_PATTERN, generateTempPassword, hashPassword, logAction, normalize
 import type { FormState } from "@/components/forms";
 import { canAccessPatient, identitySchema, medicalInfoSchema, observationSchema } from "@/lib/characters";
 import { deleteStoredImage, saveDataUrlImage } from "@/lib/images";
+import { notify } from "@/lib/requests";
 import { isPeer, requireStaff, type CurrentUser } from "@/lib/session";
 import { isStaffBookable } from "@/lib/slots";
 import { formatDateTime, parseLocal, shiftDate } from "@/lib/time";
@@ -56,7 +57,7 @@ async function loadManageableAppointment(id: string) {
   const user = await requireStaff();
   const appointment = await prisma.appointment.findUnique({
     where: { id },
-    include: { character: { select: { firstName: true, lastName: true } }, staff: { select: { displayName: true } } },
+    include: { character: { select: { firstName: true, lastName: true, userId: true } }, staff: { select: { displayName: true } } },
   });
   if (!appointment || !["PENDING", "CONFIRMED"].includes(appointment.status)) return null;
   if (appointment.staffId !== user.staff.id && !user.can("appointments.manage_all")) return null;
@@ -100,6 +101,7 @@ export async function cancelAppointmentAsStaff(_: FormState, data: FormData): Pr
 
   await prisma.appointment.update({ where: { id: appointment.id }, data: { status: "CANCELLED", cancelReason: reason } });
   await logAction(user.id, "appointment.cancel", `Annulation : ${label} — « ${reason} »`);
+  await notify([appointment.character.userId], { title: `RDV annulé : ${appointment.staff.displayName}`, body: `${formatDateTime(appointment.start)} — ${reason}`, link: "/espace" }, user.id);
   revalidatePath(`/pro/rdv/${appointment.id}`);
   revalidatePath("/pro");
   return { ok: "Rendez-vous annulé : le patient verra le motif dans son espace." };
@@ -131,6 +133,7 @@ export async function moveAppointmentAsStaff(_: FormState, data: FormData): Prom
 
   await prisma.appointment.update({ where: { id: appointment.id }, data: { start, end } });
   await logAction(user.id, "appointment.move", `Déplacement : ${label} → ${formatDateTime(start)}`);
+  await notify([appointment.character.userId], { title: `RDV déplacé : ${appointment.staff.displayName}`, body: `${formatDateTime(appointment.start)} → ${formatDateTime(start)}`, link: "/espace" }, user.id);
   revalidatePath(`/pro/rdv/${appointment.id}`);
   revalidatePath("/pro");
   return { ok: `Rendez-vous déplacé au ${formatDateTime(start)}. Le patient voit le nouvel horaire dans son espace.` };

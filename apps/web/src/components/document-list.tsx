@@ -45,9 +45,10 @@ export function DocumentList({ documents, canRevoke, highlightId, showPatient = 
                 </p>
                 {d.revokedReason && <p className="mt-1 text-xs text-muted">Motif d&apos;annulation : {d.revokedReason}</p>}
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <a href={url} target="_blank" rel="noopener" className="btn-secondary">Voir</a>
                 <a href={`${url}?dl=1`} className="btn-primary"><Download className="size-4" /> PDF</a>
+                <a href={`${url}?format=png&dl=1`} className="btn-secondary" title="Image (à coller en jeu, sur un forum…)"><Download className="size-4" /> PNG</a>
               </div>
             </div>
             {!d.revokedAt && canRevoke?.(d) && (

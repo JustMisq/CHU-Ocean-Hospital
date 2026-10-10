@@ -56,10 +56,12 @@ function Field({ field }: { field: FieldDef }) {
   );
 }
 
-export function DocumentForm({ kind, characterId, appointmentId, services, defaultServiceId }: {
+export function DocumentForm({ kind, characterId, appointmentId, requestId, services, defaultServiceId }: {
   kind: DocumentKind;
   characterId: string;
   appointmentId?: string;
+  /** Demande à laquelle le document répond (rattaché à elle à l'émission). */
+  requestId?: string;
   services: { id: string; name: string; code: string }[];
   defaultServiceId?: string;
 }) {
@@ -72,6 +74,7 @@ export function DocumentForm({ kind, characterId, appointmentId, services, defau
       <input type="hidden" name="kind" value={kind} />
       <input type="hidden" name="characterId" value={characterId} />
       {appointmentId && <input type="hidden" name="appointmentId" value={appointmentId} />}
+      {requestId && <input type="hidden" name="requestId" value={requestId} />}
 
       <div>
         <label className="label" htmlFor="serviceId">Service (en-tête et numérotation)</label>

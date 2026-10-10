@@ -2,17 +2,13 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import type { ReactNode } from "react";
-import { ChevronRight, FileText, Search, TriangleAlert, UserPlus } from "lucide-react";
+import { ChevronRight, FileText, TriangleAlert } from "lucide-react";
 import { prisma, type DocumentKind } from "@ocean/db";
-import { DossierBadges } from "@/components/dossier-badges";
-import { ActionForm, SubmitButton } from "@/components/forms";
-import { MedicalFields, ObservationFields } from "@/components/medical-fields";
-import { createDossier } from "@/lib/actions/documents";
+import { PatientPicker } from "@/components/patient-picker";
 import { isUnidentified, missingInfo } from "@/lib/characters";
 import { DOCUMENT_TYPES } from "@/lib/document-types";
-import { dossierSearch } from "@/lib/documents";
+import { canHandleRequest } from "@/lib/requests";
 import { requireStaff } from "@/lib/session";
-import { formatDate } from "@/lib/time";
 import { DocumentForm } from "../document-form";
 import { ImagingForm } from "../imaging-form";
 
@@ -28,12 +24,13 @@ export default async function NewDocumentPage({ searchParams }: PageProps<"/pro/
   const kind = user.writableKinds.find((k) => k === str(params.type)) ?? null;
   const patientId = str(params.patient);
   const rdv = str(params.rdv);
+  const demande = str(params.demande);
   const q = str(params.q).trim();
 
   /** Lien vers l'assistant en gardant les choix déjà faits. */
   const href = (change: Record<string, string | null>) => {
     const next = new URLSearchParams();
-    const current = { type: kind, patient: patientId || null, rdv: rdv || null, ...change };
+    const current = { type: kind, patient: patientId || null, rdv: rdv || null, demande: demande || null, ...change };
     for (const [k, v] of Object.entries(current)) if (v) next.set(k, v);
     return `/pro/documents/nouveau?${next}`;
   };
@@ -57,9 +54,9 @@ export default async function NewDocumentPage({ searchParams }: PageProps<"/pro/
       {!kind ? (
         <TypePicker kinds={user.writableKinds} href={href} />
       ) : !patient ? (
-        <PatientPicker kind={kind} q={q} href={href} />
+        <PatientPicker q={q} keep={{ type: kind }} hrefFor={(id) => href({ patient: id })} next="document" />
       ) : (
-        <Compose kind={kind} patient={patient} rdv={rdv} user={user} />
+        <Compose kind={kind} patient={patient} rdv={rdv} demande={demande} user={user} />
       )}
     </div>
   );
@@ -92,78 +89,11 @@ function TypePicker({ kinds, href }: { kinds: DocumentKind[]; href: (c: Record<s
   );
 }
 
-async function PatientPicker({ kind, q, href }: { kind: DocumentKind; q: string; href: (c: Record<string, string | null>) => string }) {
-  // Sans recherche : les derniers dossiers sans compte (souvent ceux qu'on vient de créer sur intervention).
-  const results = await prisma.character.findMany({
-    where: q ? dossierSearch(q) : { userId: null },
-    orderBy: q ? [{ lastName: "asc" }, { firstName: "asc" }] : { createdAt: "desc" },
-    take: q ? 20 : 8,
-  });
-
-  return (
-    <div className="space-y-6">
-      <section className="card p-5">
-        <form className="flex gap-2">
-          <input type="hidden" name="type" value={kind} />
-          <input name="q" defaultValue={q} autoFocus placeholder="Prénom, nom ou n° patient (PAT-…)" className="input" />
-          <button className="btn-primary shrink-0"><Search className="size-4" /> Rechercher</button>
-        </form>
-        <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-muted">{q ? "Résultats" : "Derniers dossiers sans compte"}</p>
-        <ul className="mt-2 divide-y divide-line">
-          {results.map((c) => (
-            <li key={c.id}>
-              <Link href={href({ patient: c.id })} className="flex items-center gap-3 py-3 hover:bg-ocean-50/50">
-                <span className="min-w-0 flex-1">
-                  <span className="flex flex-wrap items-center gap-2 font-medium">
-                    {c.firstName} {c.lastName}
-                    <DossierBadges dossier={c} />
-                  </span>
-                  <span className="block text-sm text-muted">
-                    {[c.patientNumber, c.birthDate && `né(e) le ${formatDate(c.birthDate)}`].filter(Boolean).join(" · ") || "Infos non renseignées"}
-                  </span>
-                </span>
-                <ChevronRight className="size-4 text-muted" />
-              </Link>
-            </li>
-          ))}
-          {results.length === 0 && <li className="py-4 text-sm text-muted">{q ? "Aucun dossier trouvé." : "Aucun dossier sans compte pour l'instant."}</li>}
-        </ul>
-      </section>
-
-      <details className="card" open={Boolean(q) && results.length === 0}>
-        <summary className="flex cursor-pointer items-center gap-2 p-5 font-semibold">
-          <UserPlus className="size-5 text-ocean-600" /> Créer un dossier sans compte
-        </summary>
-        <ActionForm action={createDossier} className="space-y-4 border-t border-line p-5">
-          <p className="text-sm text-muted">
-            Pour quelqu&apos;un qui n&apos;a pas encore de compte sur le site. Tout est facultatif : on remplit ce qu&apos;on sait, le reste se
-            complète plus tard depuis le dossier, qui pourra aussi être rattaché au compte du joueur.
-          </p>
-          <input type="hidden" name="kind" value={kind} />
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="label" htmlFor="firstName">Prénom</label>
-              <input id="firstName" name="firstName" maxLength={40} className="input" />
-            </div>
-            <div>
-              <label className="label" htmlFor="lastName">Nom</label>
-              <input id="lastName" name="lastName" maxLength={40} className="input" />
-            </div>
-          </div>
-          <p className="-mt-2 text-xs text-muted">Identité inconnue ? Laissez vide : le dossier sera nommé « INCONNU X-0001 », « X-0002 »…</p>
-          <ObservationFields />
-          <MedicalFields />
-          <SubmitButton pendingText="Création…">Créer le dossier et continuer</SubmitButton>
-        </ActionForm>
-      </details>
-    </div>
-  );
-}
-
-async function Compose({ kind, patient, rdv, user }: {
+async function Compose({ kind, patient, rdv, demande, user }: {
   kind: DocumentKind;
   patient: NonNullable<Awaited<ReturnType<typeof prisma.character.findUnique>>>;
   rdv: string;
+  demande: string;
   user: Awaited<ReturnType<typeof requireStaff>>;
 }) {
   const [services, appointment] = await Promise.all([
@@ -174,6 +104,12 @@ async function Compose({ kind, patient, rdv, user }: {
     }),
     rdv ? prisma.appointment.findFirst({ where: { id: rdv, characterId: patient.id }, select: { id: true, serviceId: true } }) : null,
   ]);
+  // Rédigé en réponse à une demande : rattaché à elle (si on peut la traiter), en-tête du service destinataire.
+  const request = demande
+    ? await prisma.serviceRequest.findFirst({ where: { id: demande, characterId: patient.id, status: { in: ["PENDING", "ACCEPTED"] } }, select: { id: true, number: true, toServiceId: true, recipientId: true } })
+    : null;
+  const linked = request && (await canHandleRequest(user, request)) ? request : null;
+  const defaultServiceId = services.find((s) => s.id === (linked?.toServiceId ?? appointment?.serviceId))?.id;
   const missing = [...missingInfo(patient), !patient.sex && !isUnidentified(patient) && "sexe"].filter(Boolean);
 
   return (
@@ -185,6 +121,7 @@ async function Compose({ kind, patient, rdv, user }: {
         </p>
       )}
       {patient.deceasedAt && kind !== "DECES" && <Warning>Ce patient est marqué décédé.</Warning>}
+      {linked && <p className="rounded-xl bg-ocean-50 p-3 text-sm text-ocean-800">En réponse à la demande <Link href={`/pro/demandes/${linked.id}`} className="font-semibold underline">{linked.number}</Link> : le document y sera rattaché.</p>}
       {!user.staff.signatureUrl && (
         <Warning>
           Vous n&apos;avez pas encore de signature : le document n&apos;aura que le cachet.{" "}
@@ -197,7 +134,8 @@ async function Compose({ kind, patient, rdv, user }: {
             characterId={patient.id}
             appointmentId={appointment?.id}
             services={services}
-            defaultServiceId={services.find((s) => s.id === appointment?.serviceId)?.id}
+            defaultServiceId={defaultServiceId}
+            requestId={linked?.id}
           />
         ) : (
           <DocumentForm
@@ -205,7 +143,8 @@ async function Compose({ kind, patient, rdv, user }: {
             characterId={patient.id}
             appointmentId={appointment?.id}
             services={services}
-            defaultServiceId={services.find((s) => s.id === appointment?.serviceId)?.id}
+            defaultServiceId={defaultServiceId}
+            requestId={linked?.id}
           />
         )}
       </div>

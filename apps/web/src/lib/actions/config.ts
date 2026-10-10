@@ -102,7 +102,10 @@ export async function saveService(_: FormState, data: FormData): Promise<FormSta
 
 export async function deleteService(data: FormData) {
   const user = await requireConfig();
-  const service = await prisma.service.delete({ where: { id: String(data.get("id")) } });
+  const id = String(data.get("id"));
+  // Un service qui a reçu des demandes ou des transferts est conservé (historique des patients) : le masquer à la place.
+  if (await prisma.serviceRequest.count({ where: { toServiceId: id } })) return;
+  const service = await prisma.service.delete({ where: { id } });
   await logAction(user.id, "service.delete", `Service supprimé : ${service.name}`);
   revalidateAll();
 }

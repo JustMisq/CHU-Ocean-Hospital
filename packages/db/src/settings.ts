@@ -2,7 +2,7 @@ import type { PrismaClient } from "../generated/prisma/client";
 
 /** Réglages modifiables depuis /pro/config, avec leur valeur par défaut. */
 export const SETTING_DEFAULTS = {
-  hospitalName: "Ocean Hospital",
+  hospitalName: "CHU Ocean Medical Center",
   tagline: "Votre santé à Los Santos, en quelques clics.",
   emergencyNote: "En cas d'urgence en jeu, contactez le 911.",
   /** Ville / adresse imprimée sur les ordonnances (« Los Santos, le … »). */

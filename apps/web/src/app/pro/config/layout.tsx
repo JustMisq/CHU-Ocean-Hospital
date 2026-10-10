@@ -6,6 +6,7 @@ const TABS = [
   { href: "/pro/config/services", label: "Services" },
   { href: "/pro/config/grades", label: "Grades" },
   { href: "/pro/config/specialites", label: "Spécialités" },
+  { href: "/pro/demandes/types", label: "Types de demandes" },
 ];
 
 export default async function ConfigLayout({ children }: LayoutProps<"/pro/config">) {

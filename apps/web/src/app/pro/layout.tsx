@@ -1,13 +1,16 @@
 import Link from "next/link";
-import { ChartColumn, CalendarDays, ClipboardList, Clock, FileText, ScrollText, Settings2, UserRound, Users } from "lucide-react";
+import { ArrowRightLeft, ChartColumn, CalendarDays, ClipboardList, Clock, FileText, ScrollText, Settings2, UserRound, Users } from "lucide-react";
 import { GradeBadge } from "@/components/grade-badge";
+import { pendingRequestCount } from "@/lib/requests";
 import { requireStaff } from "@/lib/session";
 import { isStaffBookable } from "@/lib/slots";
 
 export default async function ProLayout({ children }: LayoutProps<"/pro">) {
   const user = await requireStaff();
+  const pending = await pendingRequestCount(user);
   const links = [
     { href: "/pro", label: "Agenda", icon: CalendarDays, show: true },
+    { href: "/pro/demandes", label: "Demandes", icon: ArrowRightLeft, show: true, badge: pending },
     { href: "/pro/disponibilites", label: "Disponibilités", icon: Clock, show: isStaffBookable(user.staff) || user.isAdmin },
     { href: "/pro/patients", label: "Patients", icon: ClipboardList, show: user.can("patients.history") },
     { href: "/pro/documents", label: "Documents", icon: FileText, show: user.readableKinds.length > 0 },
@@ -29,9 +32,10 @@ export default async function ProLayout({ children }: LayoutProps<"/pro">) {
           </div>
         </div>
         <nav className="mt-3 flex gap-1 overflow-x-auto md:flex-col">
-          {links.map(({ href, label, icon: Icon }) => (
+          {links.map(({ href, label, icon: Icon, badge }) => (
             <Link key={href} href={href} className="flex shrink-0 items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-muted hover:bg-white hover:text-ink">
               <Icon className="size-4" /> {label}
+              {badge ? <span className="ml-auto rounded-full bg-red-600 px-1.5 text-xs font-bold text-white">{badge}</span> : null}
             </Link>
           ))}
         </nav>

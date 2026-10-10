@@ -6,6 +6,7 @@ import { z } from "zod";
 import { logAction, prisma } from "@ocean/db";
 import type { FormState } from "@/components/forms";
 import { identitySchema, medicalInfoSchema } from "@/lib/characters";
+import { notify } from "@/lib/requests";
 import { getSettings, requireUser } from "@/lib/session";
 import { bookableStaffWhere, bookingRules, canPatientCancel, findFreeSlot } from "@/lib/slots";
 import { formatDateTime } from "@/lib/time";
@@ -66,6 +67,7 @@ export async function bookAppointment(_: FormState, data: FormData): Promise<For
     });
   if (!appointment) return { error: "Ce créneau vient d'être pris. Choisissez-en un autre." };
 
+  await notify([staff.userId], { title: `Nouveau RDV : ${character.firstName} ${character.lastName}`, body: `${formatDateTime(appointment.start)} — ${reason}`, link: `/pro/rdv/${appointment.id}` });
   revalidatePath("/espace");
   redirect(`/espace?rdv=${appointment.id}`);
 }
@@ -80,7 +82,7 @@ export async function moveAppointmentAsPatient(_: FormState, data: FormData): Pr
   const rules = await bookingRules();
   const appointment = await prisma.appointment.findFirst({
     where: { id: parsed.data.id, character: { userId: user.id }, status: { in: ["PENDING", "CONFIRMED"] } },
-    include: { character: { select: { firstName: true, lastName: true } }, staff: { select: { displayName: true } } },
+    include: { character: { select: { firstName: true, lastName: true } }, staff: { select: { displayName: true, userId: true } } },
   });
   if (!appointment) return { error: "Rendez-vous introuvable." };
   if (!canPatientCancel(appointment.start, rules)) {
@@ -103,6 +105,7 @@ export async function moveAppointmentAsPatient(_: FormState, data: FormData): Pr
   if (!moved) return { error: "Ce créneau vient d'être pris. Choisissez-en un autre." };
 
   const { character, staff } = appointment;
+  await notify([staff.userId], { title: `RDV déplacé par le patient : ${character.firstName} ${character.lastName}`, body: `${formatDateTime(appointment.start)} → ${formatDateTime(moved.start)}`, link: `/pro/rdv/${appointment.id}` });
   await logAction(user.id, "appointment.move_patient", `Déplacement par le patient : ${character.firstName} ${character.lastName} (RDV de ${staff.displayName}, ${formatDateTime(appointment.start)} → ${formatDateTime(moved.start)})`);
   revalidatePath("/espace");
   revalidatePath("/pro");
@@ -114,12 +117,13 @@ export async function cancelAppointmentAsPatient(data: FormData) {
   const id = String(data.get("id"));
   const appointment = await prisma.appointment.findFirst({
     where: { id, character: { userId: user.id }, status: { in: ["PENDING", "CONFIRMED"] } },
-    include: { character: { select: { firstName: true, lastName: true } }, staff: { select: { displayName: true } } },
+    include: { character: { select: { firstName: true, lastName: true } }, staff: { select: { displayName: true, userId: true } } },
   });
   if (!appointment || !canPatientCancel(appointment.start, await bookingRules())) return;
 
   await prisma.appointment.update({ where: { id }, data: { status: "CANCELLED", cancelReason: "Annulé par le patient" } });
   const { character, staff } = appointment;
+  await notify([staff.userId], { title: `RDV annulé par le patient : ${character.firstName} ${character.lastName}`, body: formatDateTime(appointment.start), link: `/pro/rdv/${appointment.id}` });
   await logAction(user.id, "appointment.cancel_patient", `Annulation par le patient : ${character.firstName} ${character.lastName} (RDV de ${staff.displayName}, ${formatDateTime(appointment.start)})`);
   revalidatePath("/espace");
   revalidatePath("/pro");

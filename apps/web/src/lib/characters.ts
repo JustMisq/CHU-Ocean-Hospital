@@ -31,17 +31,22 @@ export const identitySchema = z.object({
 
 /**
  * Dossier patient : permission « dossiers patients », ou soignant ayant déjà eu ce patient en RDV,
- * ou lui ayant rédigé un document (ex : certificat sur intervention pour quelqu'un sans compte).
+ * ou lui ayant rédigé un document (ex : certificat sur intervention pour quelqu'un sans compte),
+ * ou concerné par une demande / un transfert à son sujet (envoyée par lui, ou reçue par un de ses services).
  */
 export async function canAccessPatient(user: { staff: { id: string } | null; can: (p: Permission) => boolean }, characterId: string) {
   if (user.can("patients.history")) return true;
   if (!user.staff) return false;
   const staffId = user.staff.id;
-  const [appointments, documents] = await Promise.all([
+  const inService = { OR: [{ staff: { some: { id: staffId } } }, { headId: staffId }] };
+  const [appointments, documents, requests] = await Promise.all([
     prisma.appointment.count({ where: { characterId, staffId } }),
     prisma.medicalDocument.count({ where: { characterId, staffId } }),
+    prisma.serviceRequest.count({
+      where: { characterId, OR: [{ authorId: staffId }, { recipientId: staffId }, { assigneeId: staffId }, { toService: inService }] },
+    }),
   ]);
-  return appointments + documents > 0;
+  return appointments + documents + requests > 0;
 }
 
 /** Ce qui manque au dossier pour être exploitable par un soignant (rien à réclamer pour un inconnu). */

@@ -75,6 +75,8 @@ Photo et bannière d'un soignant : envoyées depuis **Mon profil** (glisser-dép
 | `stats.view` | Page Statistiques |
 | `audit.view` | Page Journal (changements de grade, annulations, configuration) |
 | `settings.manage` | Page Configuration |
+| `requests.view_all` | Demandes et transferts : voir et traiter ceux de tout l'hôpital (sinon ceux de ses services) |
+| `requests.configure` | Configurer les types de demandes de tous les services (un chef de service le peut toujours pour le sien) |
 
 ## Rendez-vous
 
@@ -86,7 +88,8 @@ Photo et bannière d'un soignant : envoyées depuis **Mon profil** (glisser-dép
 ## Documents
 
 Zone **Documents** de l'espace pro (droits par type de document, voir Permissions) : on choisit le type, puis le patient, puis on rédige.
-Aussi accessible depuis le dossier patient et la fiche d'un RDV. PDF : `/api/documents/<id>` (`?dl=1` pour télécharger).
+Aussi accessible depuis le dossier patient et la fiche d'un RDV. PDF : `/api/documents/<id>` (`?dl=1` pour télécharger) ; image PNG du même document (toutes les pages) : `?format=png` (convertie
+côté serveur par pdf.js, boutons « PDF » et « PNG » dans les listes de documents).
 Le patient retrouve ses documents dans **Mon espace → Mes documents**.
 
 Types : ordonnance, prescription d'examens, certificat médical, arrêt de travail, certificat de décès (marque le dossier
@@ -144,6 +147,29 @@ Fichiers générés (locaux uniquement, aucun accès à la base) :
 - tout le reste de `atlas/` : `cd apps/web && npx tsx scripts/build-body.mts <dossier des kits Servier décompressés>`. Les kits
   (fichiers PowerPoint de smart.servier.com, décompressés en dossiers `x-Muscles`, `x-Bones`…) ne sont pas dans le dépôt ;
   un second argument facultatif donne un dossier d'images de contrôle.
+## Demandes entre services, transferts, notifications
+
+Ce qui passait par Discord se fait sur le site (page **Demandes** de l'espace pro, ou depuis le dossier patient).
+
+- **Demande à un service** (ex : la chirurgie vasculaire demande une analyse au labo). Chaque service a ses **types de demandes**,
+  configurés par la direction ou son chef de service (« Types de demandes ») :
+  - le **formulaire du demandeur** (analyses à cocher, zone à imager, réquisition…) ;
+  - ce que le service remplit **pour accepter** (date d'intervention, n° de scellé…) — vide : un clic ;
+  - ce qu'il remplit **pour répondre** (résultats, avis, score ASA…), et éventuellement le **document à rédiger** en réponse
+    (ex : compte rendu d'imagerie), rédigé depuis la demande et rattaché à elle ;
+  - les **prérequis** : documents que le patient doit avoir (ex : certificat de décès avant les pompes funèbres) et demandes déjà
+    traitées (ex : consultation d'anesthésie avant une intervention).
+  Des **modèles** adaptés à chaque service sont proposés (labo, imagerie, anesthésie, chirurgies, médecine légale, pompes funèbres,
+  kiné, infirmiers, psy, avis spécialisés, administration) : on les ajoute en un clic puis on les adapte. Une « demande d'avis »
+  libre reste toujours possible vers n'importe quel service.
+- **Transfert de patient** (ex : la réa transfère en neuro) : état, diagnostic, soins en cours ; le service le **prend en charge**.
+  Le dossier patient affiche le service où il se trouve.
+- Une demande est adressée à **tout le service** (ou à un membre précis), avec une **priorité** (normale, urgente, vitale).
+  Statuts : en attente → acceptée → terminée (ou refusée avec motif, ou annulée par le demandeur). Un **fil d'échanges** permet
+  de se parler sur chaque demande. Le service destinataire accède au dossier du patient concerné.
+- **Notifications** (cloche en haut du site, pour soignants et patients) : nouvelle demande pour son service, réponse, message,
+  transfert pris en charge ; RDV réservé, déplacé ou annulé ; nouveau document dans son dossier (patient). Le nombre de
+  demandes à traiter s'affiche aussi dans le menu « Demandes ».
 ## Données conservées
 
 - Un personnage supprimé par un joueur qui a déjà eu des RDV est **archivé**, pas effacé : son dossier reste visible des soignants.

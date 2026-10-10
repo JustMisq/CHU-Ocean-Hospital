@@ -10,6 +10,8 @@ export const PERMISSIONS = {
   "appointments.manage_all": "Gérer les rendez-vous de tous les soignants",
   "documents.view_all": "Zone Documents : voir les documents de tout l'hôpital (sinon seulement les siens)",
   "documents.revoke_all": "Annuler les documents rédigés par d'autres soignants",
+  "requests.view_all": "Demandes et transferts : voir et traiter ceux de tout l'hôpital (sinon ceux de ses services)",
+  "requests.configure": "Demandes : configurer les types de demandes de tous les services (un chef de service peut toujours le faire pour le sien)",
   "staff.manage": "Gérer le personnel (grades, services, spécialités)",
   "staff.manage_peers": "Gérer aussi son propre profil et ceux de même grade (services, spécialités, annuaire — pas le grade)",
   "stats.view": "Voir les statistiques",

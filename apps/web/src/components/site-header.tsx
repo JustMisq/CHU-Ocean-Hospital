@@ -1,12 +1,15 @@
 import Link from "next/link";
 import { LogOut, Stethoscope } from "lucide-react";
 import { signOut } from "@/auth";
+import { unreadCount } from "@/lib/notifications";
 import { getCurrentUser, getSettings } from "@/lib/session";
 import { Avatar } from "./avatar";
 import { Logo } from "./logo";
+import { NotificationBell } from "./notification-bell";
 
 export async function SiteHeader() {
   const [user, settings] = await Promise.all([getCurrentUser(), getSettings()]);
+  const unread = user ? await unreadCount(user.id) : 0;
 
   return (
     <header className="sticky top-0 z-30 border-b border-line bg-white/90 backdrop-blur">
@@ -26,6 +29,7 @@ export async function SiteHeader() {
                   <Stethoscope className="size-4" /> Espace pro
                 </Link>
               )}
+              <NotificationBell initial={unread} />
               <Link href="/espace" className="flex items-center gap-2 rounded-full py-1 pl-1 pr-3 hover:bg-ocean-50">
                 <Avatar name={user.username} src={user.staff?.photoUrl} />
                 <span className="hidden text-sm font-semibold sm:inline">{user.username}</span>
